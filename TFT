@@ -1,3 +1,4 @@
+!pip install pytorch-forecasting lightning
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt

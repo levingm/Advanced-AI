@@ -4,18 +4,18 @@ from xgboost import XGBRegressor
 from sklearn.metrics import mean_absolute_error, r2_score
 
 # 1. --- DEFINE YOUR START AND SPLIT DATES HERE ---
-START_DATE = '2003-01-27'  # The model will IGNORE everything before this
+START_DATE = '2003-01-27' 
 
 split_dates = [
     '2021-01-23',
     '2022-01-23',
-    '2023-01-23', 
-    '2024-01-23', 
-    '2025-01-23',
-    '2025-02-23',
-    '2025-03-23',
-    '2025-04-23',
-    '2025-05-23',
+    '2025-03-01', 
+    '2025-03-06', 
+    '2025-03-11',
+    '2025-03-16',
+    '2025-03-21',
+    '2025-03-26',
+    '2025-03-30',
 ]
 # -------------------------------------------------
 
@@ -24,30 +24,47 @@ df = pd.read_excel('data_pchip.xlsx')
 df['Datum'] = pd.to_datetime(df['Datum'])
 df = df.sort_values('Datum')
 
-# Feature Engineering (Done on full set to keep lags consistent)
+# Feature Engineering
 df['Diff_Volume'] = df['Einlagevolumen'].diff() 
 df['Prev_Volume'] = df['Einlagevolumen'].shift(1)
+
+# Yearly Lag (Date-based merge for leap-year rigor)
+df['Date_Last_Year'] = df['Datum'] - pd.DateOffset(years=1)
+df_helper = df[['Datum', 'Einlagevolumen']].copy()
+df_helper.columns = ['Date_Last_Year', 'Prev_Volume_Yearly']
+
+df = pd.merge(df, df_helper, on='Date_Last_Year', how='left')
+df = df.drop(columns=['Date_Last_Year'])
+df['Prev_Volume_Yearly'] = df['Prev_Volume_Yearly'].ffill() 
+
 df['Spread'] = df['€STR'] - df['Einlagezinssatz'] 
 df['Year'] = df['Datum'].dt.year
 df['Month'] = df['Datum'].dt.month
 df['Mean_Zins_7W'] = df['Einlagezinssatz'].shift(1).rolling(window=7).mean()
+
+# Sine/Cosine Seasonality (Optional but recommended for rigor)
+df['Month_Sin'] = np.sin(2 * np.pi * df['Month'] / 12)
+df['Month_Cos'] = np.cos(2 * np.pi * df['Month'] / 12)
+
 df = df.dropna()
 
-features = ['€STR', 'Einlagezinssatz', 'Spread', 'Year', 'Month', 'Prev_Volume', 'Mean_Zins_7W']
+# Update features list
+features = ['€STR', 'Einlagezinssatz', 'Spread', 'Year', 'Prev_Volume', 'Mean_Zins_7W', 'Prev_Volume_Yearly', 'Month_Sin', 'Month_Cos']
+
 target = 'Diff_Volume'
 
 # 3. BACKTESTING LOOP
 print(f"Training Start Date: {START_DATE}")
-print(f"{'Split Date':<15} | {'Train Rows':<10} | {'Test Rows':<10} | {'MAE':<10} | {'R2':<10}")
-print("-" * 65)
+# Adjusted header for the new column
+print(f"{'Split Date':<15} | {'Train':<6} | {'Test':<6} | {'MAE':<8} | {'R2':<8} | {'Adj. R2':<8}")
+print("-" * 75)
 
 for d in split_dates:
-    # Filter: Only take data BETWEEN Start Date and the Split Date
     train = df[(df['Datum'] >= START_DATE) & (df['Datum'] < d)]
     test = df[df['Datum'] >= d]
     
-    if len(train) < 50 or len(test) < 2:
-        print(f"{d:<15} | Not enough data in this window.")
+    if len(train) < 50 or len(test) < len(features) + 2:
+        print(f"{d:<15} | Not enough rows for Adj. R2 calculation.")
         continue
 
     # Train Model
@@ -57,10 +74,15 @@ for d in split_dates:
     # Predict
     preds = model.predict(test[features])
     
-    # Metrics
+    # 4. Metric Calculations
     mae = mean_absolute_error(test[target], preds)
     r2 = r2_score(test[target], preds)
     
-    print(f"{d:<15} | {len(train):<10} | {len(test):<10} | {mae:<10.4f} | {r2:<10.4f}")
+    # Adjusted R2 Formula: 1 - [(1-R2)*(n-1) / (n-k-1)]
+    n = len(test)
+    k = len(features)
+    adj_r2 = 1 - ((1 - r2) * (n - 1) / (n - k - 1))
+    
+    print(f"{d:<15} | {len(train):<6} | {len(test):<6} | {mae:<8.4f} | {r2:<8.4f} | {adj_r2:<8.4f}")
 
-print("-" * 65)
+print("-" * 75)

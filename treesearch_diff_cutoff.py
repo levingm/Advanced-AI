@@ -7,20 +7,13 @@ from sklearn.metrics import mean_absolute_error, r2_score
 START_DATE = '2003-01-27' 
 
 split_dates = [
-    '2021-01-23',
-    '2022-01-23',
-    '2025-03-01', 
-    '2025-03-06', 
-    '2025-03-11',
-    '2025-03-16',
-    '2025-03-21',
-    '2025-03-26',
-    '2025-03-30',
-]
+    '2025-03-15',
+    
+    ]
 # -------------------------------------------------
 
 # 2. Load and Prep Data
-df = pd.read_excel('data_pchip.xlsx') 
+df = pd.read_excel('Data all variables.xlsx') 
 df['Datum'] = pd.to_datetime(df['Datum'])
 df = df.sort_values('Datum')
 
@@ -49,7 +42,21 @@ df['Month_Cos'] = np.cos(2 * np.pi * df['Month'] / 12)
 df = df.dropna()
 
 # Update features list
-features = ['€STR', 'Einlagezinssatz', 'Spread', 'Year', 'Prev_Volume', 'Mean_Zins_7W', 'Prev_Volume_Yearly', 'Month_Sin', 'Month_Cos']
+features = [
+    '€STR', 
+    'Einlagezinssatz', 
+    'Spread', 
+    'Year', 
+    'Prev_Volume', 
+    'Mean_Zins_7W', 
+    'Prev_Volume_Yearly', 
+    'Month_Sin', 
+    'Month_Cos', 
+    'GPRC_DEU', 
+    'MoM Inflation', 
+    'DAX', 
+    '10Y Bond'
+]
 
 target = 'Diff_Volume'
 

@@ -1,151 +1,198 @@
-import pandas as pd
+"""
+==============================================================================
+LINEAR REGRESSION + SARIMA
+==============================================================================
+"""
+
+# ==============================================================================
+# 0. CONFIGURATION
+# ==============================================================================
+FILE_PATH  = 'Data all variables.xlsx'
+START_DATE = '2005-01-01'
+END_DATE   = '2018-12-31'
+TEST_DAYS  = 20
+
+TARGET   = 'Einlagevolumen'
+FEATURES = ['€STR', 'Einlagezinssatz', 'GPRC_DEU', 'MoM Inflation', 'DAX', '10Y Bond']
+
+# ==============================================================================
+# 1. IMPORT
+# ==============================================================================
+import warnings; warnings.filterwarnings('ignore')
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 import seaborn as sns
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error, r2_score
-from statsmodels.tsa.statespace.sarimax import SARIMAX
-import warnings
+from scipy import stats
+from sklearn.linear_model    import LinearRegression
+from sklearn.metrics         import (mean_squared_error, mean_absolute_error,
+                                     r2_score, mean_absolute_percentage_error)
 
-warnings.filterwarnings('ignore')
+import statsmodels.api as sm
+from statsmodels.tsa.statespace.sarimax   import SARIMAX
+from statsmodels.tsa.stattools            import adfuller
+from statsmodels.stats.stattools          import durbin_watson
+from statsmodels.stats.diagnostic         import het_breuschpagan
+from statsmodels.stats.outliers_influence import variance_inflation_factor
 
-# ==========================================
-# CONFIGURATION
-# ==========================================
-START_DATE = '2005-01-01'  
-END_DATE   = '2018-12-31'  
-TEST_DAYS  = 20            
-# ==========================================
+plt.style.use('seaborn-v0_8-whitegrid')
+PALETTE = {'actual': '#1f1f1f', 'base': '#2196F3', 'lag': '#4CAF50', 'sarima': '#9C27B0'}
 
-# 1. DATA LOADING & CLEANING
-file_path = 'Data all variables.xlsx' 
-df = pd.read_excel(file_path)
+# ==============================================================================
+# 2. DATA
+# ==============================================================================
+df_raw = pd.read_excel(FILE_PATH)
+df_raw['Datum'] = pd.to_datetime(df_raw['Datum'])
+df_raw.set_index('Datum', inplace=True)
+df_raw.sort_index(inplace=True)
 
-df['Datum'] = pd.to_datetime(df['Datum'])
-df.set_index('Datum', inplace=True)
-df.sort_index(inplace=True)
+# ==============================================================================
+# 3. LAGGED 1-DAY FEATURE
+# ==============================================================================
+df = df_raw.copy()
+df['Lag_1_Day'] = df[TARGET].shift(1)
 
-# 2. FEATURE ENGINEERING
-# El Lag ahora toma el último registro disponible sin importar el salto de días
-df['Lag_1_Day'] = df['Einlagevolumen'].shift(1)
-df['Lag_1_Week'] = df['Einlagevolumen'].rolling(window=7).mean().shift(1)
+df = df.loc[START_DATE:END_DATE].dropna()
 
-# --- APPLY DATE FILTERING ---
-df = df.loc[START_DATE : END_DATE]
-df = df.dropna()
+print(f"\nAnalysis period : {df.index.min().date()} → {df.index.max().date()}")
+print(f"Observations    : {len(df):,}  |  Test window: {TEST_DAYS} obs")
 
-print(f"Analysis Period: {df.index.min().date()} to {df.index.max().date()}")
-print(f"Total observations: {len(df)}")
+# ==============================================================================
+# 4. TRAIN / TEST SPLIT
+# ==============================================================================
+train = df.iloc[:-TEST_DAYS].copy()
+test  = df.iloc[-TEST_DAYS:].copy()
+y_train, y_test = train[TARGET], test[TARGET]
+LAG_FEATURES = FEATURES + ['Lag_1_Day']
 
-# 3. TRAIN-TEST SPLIT
-train = df.iloc[:-TEST_DAYS]
-test = df.iloc[-TEST_DAYS:]
+# ==============================================================================
+# 5. BASE LR, LAGGED LR, SARIMA
+# ==============================================================================
+models, preds = {}, {}
 
-y_train = train['Einlagevolumen']
-y_test = test['Einlagevolumen']
+# Base LR
+lr_base = LinearRegression().fit(train[FEATURES], y_train)
+models['Base LR'] = lr_base
+preds['Base LR']  = lr_base.predict(test[FEATURES])
 
-# Feature Lists
-base_features = ['€STR', 'Einlagezinssatz', 'GPRC_DEU', 'MoM Inflation', 'DAX', '10Y Bond']
-lag_features = base_features + ['Lag_1_Day']
+# Lagged LR
+lr_lag = LinearRegression().fit(train[LAG_FEATURES], y_train)
+models['Lagged LR'] = lr_lag
+preds['Lagged LR']  = lr_lag.predict(test[LAG_FEATURES])
 
-# Helper functions
-def get_adj_r2(y_true, y_pred, n_samples, n_features):
-    r2 = r2_score(y_true, y_pred)
-    return 1 - (1 - r2) * (n_samples - 1) / (n_samples - n_features - 1)
+# SARIMA(1,1,1)
+sarima_fit = SARIMAX(
+    y_train,
+    exog=train[FEATURES],
+    order=(1, 1, 1),
+    enforce_stationarity=False,
+    enforce_invertibility=False
+).fit(disp=False)
+sarima_forecast = sarima_fit.get_forecast(steps=TEST_DAYS, exog=test[FEATURES])
+pred_sarima     = sarima_forecast.predicted_mean
+conf_int        = sarima_forecast.conf_int(alpha=0.05)
+preds['SARIMA'] = pred_sarima.values
 
-def get_mape(y_true, y_pred):
-    return np.mean(np.abs((y_true - y_pred) / y_true)) * 100
+# ==============================================================================
+# 6. METRICS 
+# ==============================================================================
+def compute_metrics(y_true, y_pred, n_features):
+    n      = len(y_true)
+    r2     = r2_score(y_true, y_pred)
+    adj_r2 = 1 - (1 - r2) * (n - 1) / (n - n_features - 1)
+    rmse   = np.sqrt(mean_squared_error(y_true, y_pred))
+    mae    = mean_absolute_error(y_true, y_pred)
+    mape   = mean_absolute_percentage_error(y_true, y_pred) * 100
+    dir_acc = (np.mean(np.sign(np.diff(np.array(y_true))) ==
+                       np.sign(np.diff(np.array(y_pred)))) * 100
+               if n > 1 else np.nan)
+    return {
+        'R²':           round(r2,      4),
+        'Adj. R²':      round(adj_r2,  4),
+        'RMSE':         round(rmse,    4),
+        'MAE':          round(mae,     4),
+        'MAPE (%)':     round(mape,    4),
+        'Dir. Acc (%)': round(dir_acc, 2),
+    }
 
-# --- MODEL 1: BASE LINEAR REGRESSION ---
-X_train_base = train[base_features]
-X_test_base = test[base_features]
-lr_base = LinearRegression().fit(X_train_base, y_train)
-pred_base = lr_base.predict(X_test_base)
-
-# --- MODEL 2: LAGGED (1 DAY) REGRESSION ---
-X_train_lag = train[lag_features]
-X_test_lag = test[lag_features]
-lr_lag = LinearRegression().fit(X_train_lag, y_train)
-pred_lag = lr_lag.predict(X_test_lag)
-
-# --- MODEL 4: SARIMA (1,1,1) ---
-# Al no tener frecuencia fija, SARIMA tratará los datos como una secuencia simple
-sarima = SARIMAX(train['Einlagevolumen'], 
-                 exog=train[base_features], 
-                 order=(1, 1, 1),
-                 enforce_stationarity=False,
-                 enforce_invertibility=False) 
-sarima_fit = sarima.fit(disp=False)
-pred_sarima = sarima_fit.get_forecast(steps=TEST_DAYS, 
-                                      exog=test[base_features]).predicted_mean
-
-# 4. COMPREHENSIVE EVALUATION
-models_metrics = {
-    'Base LR': [np.sqrt(mean_squared_error(y_test, pred_base)),
-                get_mape(y_test, pred_base),
-                get_adj_r2(y_test, pred_base, len(y_test), 6)],
-    
-    'Lagged LR (1D)': [np.sqrt(mean_squared_error(y_test, pred_lag)),
-                       get_mape(y_test, pred_lag),
-                       get_adj_r2(y_test, pred_lag, len(y_test), 7)],
-    
-    'SARIMA': [np.sqrt(mean_squared_error(y_test, pred_sarima)),
-               get_mape(y_test, pred_sarima),
-               r2_score(y_test, pred_sarima)]
+metric_rows = {
+    'Base LR':   compute_metrics(y_test, preds['Base LR'],   len(FEATURES)),
+    'Lagged LR': compute_metrics(y_test, preds['Lagged LR'], len(LAG_FEATURES)),
+    'SARIMA':    compute_metrics(y_test, pred_sarima.values, len(FEATURES) + 2),
 }
 
-results_df = pd.DataFrame(models_metrics, index=['RMSE', 'MAPE (%)', 'Adj. R-Squared']).T
-print("\n--- Model Comparison Table ---")
+results_df = pd.DataFrame(metric_rows).T
+print("\n" + "=" * 60)
+print(f"OUT-OF-SAMPLE METRICS  (test set: last {TEST_DAYS} observations)")
+print("=" * 60)
 print(results_df.to_string())
 
-# 5. VISUALIZATION
-plt.figure(figsize=(12, 6))
-plt.plot(test.index, y_test, label='Actual Data', color='black', lw=2, marker='o', markersize=4)
-plt.plot(test.index, pred_lag, label='Lagged LR (1D)', ls='--')
-plt.plot(test.index, pred_sarima, label='SARIMA', ls=':')
-plt.title(f'Prediction Comparison (Observed Days only: {START_DATE} to {END_DATE})')
-plt.ylabel('Mio €')
-plt.legend()
-plt.grid(True, alpha=0.3)
-plt.show()
+# ==============================================================================
+# 8. VISUALS
+# ==============================================================================
 
-
-# as an autoregresive model SARIMA(1,1,1) only "behaves" nice during the first predictions, 
-# after that errors take a toll on the predictions unlike lagged linear regression which
-# has the advantage of having the day before variable import seaborn as sns
-
-
-
-plt.figure(figsize=(15, 7))
-
-# --- Plot 1: Actual vs Predicted (Identity Line) ---
-plt.subplot(1, 2, 1)
-
-# Adding the three models for comparison
-plt.scatter(test['Einlagevolumen'], pred_base, color='green', alpha=0.4, label='Normal LR (No Lag)')
-plt.scatter(test['Einlagevolumen'], pred_lag, color='blue', alpha=0.5, label='Lagged LR (1D)')
-plt.scatter(test['Einlagevolumen'], pred_sarima, color='red', alpha=0.5, label='SARIMA')
-
-# The "Perfect Prediction" Reference Line
-min_val = test['Einlagevolumen'].min()
-max_val = test['Einlagevolumen'].max()
-plt.plot([min_val, max_val], [min_val, max_val], color='black', lw=1.5, ls='--', label='Perfect Prediction')
-
-plt.title('Actual vs Predicted: Model Comparison', fontsize=14)
-plt.xlabel('Actual Values (Mio €)', fontsize=12)
-plt.ylabel('Predicted Values (Mio €)', fontsize=12)
-plt.legend()
-plt.grid(True, alpha=0.2)
-
-# --- Plot 2: Feature Importance (Focus on Lagged Model) ---
-plt.subplot(1, 2, 2)
-# Using coefficients from your Lagged LR as it's the most explanatory
-importance = pd.Series(lr_lag.coef_, index=lag_features).sort_values()
-importance.plot(kind='barh', color='teal')
-
-plt.title('Feature Importance (Lagged LR Coefficients)', fontsize=14)
-plt.xlabel('Coefficient Weight (Impact)', fontsize=12)
-plt.axvline(0, color='black', lw=1) # Zero line reference
-
+# DAY FORECAST
+fig, ax = plt.subplots(figsize=(13, 5))
+ax.plot(test.index, y_test,             label='Actual',    color=PALETTE['actual'], lw=2.5, marker='o', ms=4)
+ax.plot(test.index, preds['Base LR'],   label='Base LR',   color=PALETTE['base'],   ls='--', lw=1.8)
+ax.plot(test.index, preds['Lagged LR'], label='Lagged LR',     color=PALETTE['lag'],    ls='-.', lw=2)
+ax.plot(test.index, pred_sarima,        label='SARIMA(1,1,1)', color=PALETTE['sarima'], ls=':',  lw=2)
+ax.set_title(f'Out-of-Sample Forecast — Base LR vs Lagged LR vs SARIMA\n'
+             f'Train: {START_DATE} → {train.index.max().date()}  |  Test: last {TEST_DAYS} obs',
+             fontsize=13)
+ax.set_ylabel('Deposit Volume (Mio €)')
+ax.legend()
 plt.tight_layout()
+plt.savefig('02_forecast_all_models.png', dpi=150)
 plt.show()
+
+# LAGGED LR RESIDUALS
+resid_train = y_train.values - lr_lag.predict(train[LAG_FEATURES])
+
+fig = plt.figure(figsize=(14, 9))
+gs  = gridspec.GridSpec(2, 2, hspace=0.4, wspace=0.3)
+
+ax1 = fig.add_subplot(gs[0, :])
+ax1.plot(train.index, resid_train, color='steelblue', alpha=0.7, lw=0.8)
+ax1.axhline(0, color='red', ls='--', lw=1)
+ax1.set_title('Residuals over Time (in-sample)')
+ax1.set_ylabel('Residual (Mio €)')
+
+ax2 = fig.add_subplot(gs[1, 0])
+stats.probplot(resid_train, plot=ax2)
+ax2.set_title('Q-Q Plot — Normality of Residuals')
+
+ax3 = fig.add_subplot(gs[1, 1])
+ax3.scatter(lr_lag.predict(train[LAG_FEATURES]), resid_train, alpha=0.3, s=10, color='steelblue')
+ax3.axhline(0, color='red', ls='--')
+ax3.set_xlabel('Fitted Values')
+ax3.set_ylabel('Residuals')
+ax3.set_title('Residuals vs Fitted (Homoskedasticity Check)')
+
+plt.suptitle('Residual Diagnostics — Lagged LR', fontsize=14, fontweight='bold')
+plt.savefig('03_residual_diagnostics.png', dpi=150)
+plt.show()
+
+# --- 8e. SARIMA forecast with 95% confidence interval ---
+fig, ax = plt.subplots(figsize=(13, 5))
+ax.plot(test.index, y_test,             label='Actual',        color=PALETTE['actual'], lw=2.5, marker='o', ms=4)
+ax.plot(test.index, preds['Lagged LR'], label='Lagged LR',     color=PALETTE['lag'],    ls='-.', lw=2)
+ax.plot(test.index, pred_sarima,        label='SARIMA(1,1,1)', color=PALETTE['sarima'], ls='--', lw=2)
+ax.fill_between(test.index,
+                conf_int.iloc[:, 0], conf_int.iloc[:, 1],
+                alpha=0.15, color=PALETTE['sarima'], label='SARIMA 95% CI')
+ax.set_title('SARIMA vs Lagged LR — Forecast with 95% Confidence Interval', fontsize=13)
+ax.set_ylabel('Deposit Volume (Mio €)')
+ax.legend()
+plt.tight_layout()
+plt.savefig('06_sarima_forecast_ci.png', dpi=150)
+plt.show()
+
+print("""
+NOTE — SARIMA error accumulation:
+  SARIMA is autoregressive: each step uses its own prior prediction, so
+  errors compound over the forecast horizon. Lagged LR avoids this because
+  it uses the actual observed value (Lag_1_Day) at each test step.
+  This is a key methodological limitation to address in your thesis.
+""")

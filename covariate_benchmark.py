@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from tqdm import tqdm
 
-import treesearch_common as tc
+import common as tc
 
 
 def parse_args():
@@ -54,6 +54,7 @@ def parse_args():
 
 
 def print_summary_table(df: pd.DataFrame):
+    """Gibt Zusammenfassung der Benchmark-Ergebnisse aus."""
     print("\n" + "=" * 100)
     print("KOVARIATEN-BENCHMARK (sortiert nach MAE_Volumen)")
     print("=" * 100)
@@ -77,25 +78,33 @@ def print_summary_table(df: pd.DataFrame):
 
 
 def save_benchmark_plot(df: pd.DataFrame, path: str):
-  best = df.loc[df.groupby("Modell")["MAE_Volumen"].idxmin()].copy()
-  best = best.sort_values("MAE_Volumen")
+    """Speichert Bar-Plot der besten Kombinationen pro Modell."""
+    best = df.loc[df.groupby("Modell")["MAE_Volumen"].idxmin()].copy()
+    best = best.sort_values("MAE_Volumen")
 
-  fig, ax = plt.subplots(figsize=(10, 5))
-  bars = ax.bar(
-      best["Modell"] + "\n" + best["Label"],
-      best["MAE_Volumen"],
-      color="steelblue",
-      alpha=0.85,
-  )
-  ax.set_ylabel("MAE Volumen [Mrd. €]")
-  ax.set_title("Beste Kovariaten-Kombination pro Modell")
-  ax.tick_params(axis="x", rotation=25)
-  plt.tight_layout()
-  for bar, val in zip(bars, best["MAE_Volumen"]):
-      ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f"{val:.3f}", ha="center", va="bottom", fontsize=8)
-  plt.savefig(path, dpi=150)
-  plt.close()
-  print(f"\nPlot gespeichert: {path}")
+    fig, ax = plt.subplots(figsize=(10, 5))
+    bars = ax.bar(
+        best["Modell"] + "\n" + best["Label"],
+        best["MAE_Volumen"],
+        color="steelblue",
+        alpha=0.85,
+    )
+    ax.set_ylabel("MAE Volumen [Mrd. €]")
+    ax.set_title("Beste Kovariaten-Kombination pro Modell")
+    ax.tick_params(axis="x", rotation=25)
+    plt.tight_layout()
+    for bar, val in zip(bars, best["MAE_Volumen"]):
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height(),
+            f"{val:.3f}",
+            ha="center",
+            va="bottom",
+            fontsize=8,
+        )
+    plt.savefig(path, dpi=150)
+    plt.close()
+    print(f"\nPlot gespeichert: {path}")
 
 
 def main():
@@ -105,6 +114,7 @@ def main():
 
     print(f"Benchmark: {len(args.modelle)} Modell(e) × {len(combos)} Kovariaten-Sets = {total} Läufe")
     print(f"Modus: {args.kovariaten_modus} | Simulationen: {args.simulationen}")
+    print(f"\nSzenario 2A: Nur historische Kovariaten (realistische Prognose ohne Zukunftswissen)\n")
 
     results = []
     tasks = [(m, cols, label) for m in args.modelle for cols, label in combos]

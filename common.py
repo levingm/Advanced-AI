@@ -1,4 +1,8 @@
-"""Gemeinsame Pipeline für Treesearch-Prognosen und Kovariaten-Vergleich."""
+"""Gemeinsame Pipeline für Treesearch-Prognosen und Kovariaten-Vergleich.
+
+Szenario 2A: Realistische Prognose ohne Zukunftswissen der Kovariaten.
+Alle Modelle erhalten nur historische Fenster; keine echten zukünftigen Kovariatenwerte.
+"""
 
 from __future__ import annotations
 
@@ -52,10 +56,13 @@ GROUP_ID = "series"
 TFT_MAX_EPOCHS = 40
 TFT_BATCH_SIZE = 64
 TFT_LEARNING_RATE = 1e-3
+TFT_VAL_FRACTION = 0.2  # Letzten 20% der Trainingsperiode für Validierung
 
 
 @dataclass
 class ForecastResult:
+    """Ergebnis einer einzelnen Modell × Kovariaten-Evaluation."""
+
     model: str
     covariates: list[str]
     covariate_label: str
@@ -70,13 +77,20 @@ class ForecastResult:
 
 
 def variablen_for(covariates: list[str]) -> list[str]:
+    """Kombiniert Target + Kovariaten für Datenladung."""
     return [TARGET_COL] + list(covariates)
 
 
 def generate_covariate_combinations(
     mode: str = "presets",
 ) -> list[tuple[list[str], str]]:
-    """Liefert (Kovariatenliste, Label) für den Benchmark-Loop."""
+    """Liefert (Kovariatenliste, Label) für den Benchmark-Loop.
+
+    Args:
+        mode: "presets" (vordefinierte Sets), "pairs" (alle 2er-Kombinationen),
+              "singletons" (einzelne Variablen), "all" (presets+pairs+singletons),
+              "full" (alle möglichen Kombinationen).
+    """
     combos: list[tuple[list[str], str]] = []
 
     if mode in ("presets", "all"):
@@ -120,7 +134,19 @@ def generate_covariate_combinations(
     return unique
 
 
-def load_prepared_df(covariates: list[str]) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def load_prepared_df(
+    covariates: list[str],
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Lädt und bereitet Daten vor.
+
+    KORREKTUR 1.1: Typannotation korrigiert (4 statt 3 DataFrames).
+
+    Returns:
+        df: Vollständiger DF mit NaNs (für echte Test-Werte)
+        df_clean: DF ohne NaNs (für Training/Sequenzen)
+        train_df: Trainingsdaten bis TRAINING_ENDE
+        future_df: Zukünftige Daten für Forecast (nur als Referenz, nicht für Input)
+    """
     variablen = variablen_for(covariates)
     df = pd.read_excel(DATEN)
     df["Datum"] = pd.to_datetime(df["Datum"])
@@ -134,7 +160,21 @@ def load_prepared_df(covariates: list[str]) -> tuple[pd.DataFrame, pd.DataFrame,
     return df, df_clean, train_df, future_df
 
 
-def create_sequences(X_arr: np.ndarray, y_arr: np.ndarray, gd: int, hz: int):
+def create_sequences(
+    X_arr: np.ndarray, y_arr: np.ndarray, gd: int, hz: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Erstellt Multi-Step-Sequenzen aus Zeitreihendaten.
+
+    Args:
+        X_arr: Feature-Array (n_samples, n_features)
+        y_arr: Target-Array (n_samples, n_targets)
+        gd: Gedächtnis (Encoder-Länge)
+        hz: Prognose-Horizont (Decoder-Länge)
+
+    Returns:
+        X_seq: Array von Sequenzen (n_sequences, gd * n_features)
+        y_seq: Array von Targets (n_sequences, hz * n_targets)
+    """
     X_seq, y_seq = [], []
     for i in range(len(X_arr) - gd - hz + 1):
         X_seq.append(X_arr[i : i + gd].flatten())
@@ -148,6 +188,7 @@ def compute_metrics(
     true_volume: np.ndarray,
     pred_volume: np.ndarray,
 ) -> dict[str, float]:
+    """Berechnet MAE, RMSE, R² auf Differenzen und Level."""
     return {
         "mae_diff": float(mean_absolute_error(true_diff, pred_diff)),
         "rmse_diff": float(np.sqrt(mean_squared_error(true_diff, pred_diff))),
@@ -158,34 +199,143 @@ def compute_metrics(
     }
 
 
-def _true_test_arrays(df: pd.DataFrame, df_clean: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
-    start = df.index.get_loc(INPUT_ANFANG)
-    true_diff = df_clean.iloc[start : start + PROGNOSEHORIZONT][TARGET_DIFF].values
-    true_volume = df.iloc[start : start + PROGNOSEHORIZONT][TARGET_COL].values
+def _true_test_arrays(
+    df: pd.DataFrame, df_clean: pd.DataFrame
+) -> tuple[np.ndarray, np.ndarray]:
+    """Extrahiert echte Test-Werte basierend auf Daten, nicht Positionen.
+
+    KORREKTUR 1.2: Verwendet Datum-basierte Indexierung (loc + iloc),
+    um sicherzustellen, dass df und df_clean korrekt ausgerichtet sind.
+    """
+    # Differenzen: aus df_clean (ohne erste NaN-Zeile), ab INPUT_ANFANG
+    true_diff = (
+        df_clean.loc[INPUT_ANFANG:]
+        .iloc[:PROGNOSEHORIZONT][TARGET_DIFF]
+        .to_numpy()
+    )
+
+    # Volumen (Level): aus df (mit eventuellen NaNs), ab INPUT_ANFANG
+    true_volume = (
+        df.loc[INPUT_ANFANG:].iloc[:PROGNOSEHORIZONT][TARGET_COL].to_numpy()
+    )
+
     return true_diff, true_volume
 
 
 def reconstruct_volume(diff_pred: np.ndarray, last_level: float) -> np.ndarray:
+    """Rekonstruiert Volumen-Level aus Differenzen.
+
+    Args:
+        diff_pred: Prognostizierte Differenzen
+        last_level: Letztes bekanntes Volumen (an TRAINING_ENDE)
+
+    Returns:
+        Rekonstruiertes Volumen für den Prognosehorizont
+    """
     return last_level + np.cumsum(diff_pred)
+
+
+def fit_sequence_model(
+    model_name: str,
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    seed: int = SEED,
+) -> object:
+    """Trainiert ein Sequence-Modell (Linreg, FFN, XGBoost).
+
+    VERBESSERUNG 3.1: Extrahierter Code zur Vermeidung von Duplikation.
+
+    Args:
+        model_name: "linreg", "ffn" oder "xgboost"
+        X_train: Trainingsdaten (n_samples, n_features)
+        y_train: Trainings-Targets (n_samples, n_targets)
+        seed: Random seed
+
+    Returns:
+        Trainiertes Modell-Objekt
+    """
+    if model_name == "linreg":
+        # Bootstrapping für Unsicherheitsquantifizierung
+        rng = np.random.default_rng(seed)
+        boot_idx = rng.choice(len(X_train), size=len(X_train), replace=True)
+        model = MultiOutputRegressor(LinearRegression())
+        model.fit(X_train[boot_idx], y_train[boot_idx])
+    elif model_name == "ffn":
+        model = MLPRegressor(
+            hidden_layer_sizes=(128, 64),
+            activation="relu",
+            max_iter=500,
+            early_stopping=True,
+            validation_fraction=0.1,
+            random_state=seed,
+            learning_rate_init=1e-3,
+        )
+        model.fit(X_train, y_train)
+    elif model_name == "xgboost":
+        from xgboost import XGBRegressor
+
+        model = MultiOutputRegressor(
+            XGBRegressor(
+                n_estimators=100,
+                learning_rate=0.05,
+                max_depth=5,
+                random_state=seed,
+                subsample=0.8,
+            )
+        )
+        model.fit(X_train, y_train)
+    else:
+        raise ValueError(f"Unbekanntes Sequenzmodell: {model_name}")
+
+    return model
 
 
 def _prepare_sequence_data(
     covariates: list[str],
-) -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]:
+) -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray, np.ndarray, np.ndarray, object, float]:
+    """Bereitet Daten für Sequence-Modelle vor.
+
+    KORREKTIONEN 1.3, 1.4, 1.5:
+    - Skalierung nur auf Trainingsdaten (kein Leakage)
+    - Korrekter Train/Test-Split ohne zukünftige Targets im Training
+    - Off-by-one-Fehler bei x_input behoben
+    - Szenario 2A: Nur historische Kovariaten, keine Zukunftswerte
+
+    Returns:
+        (df, df_clean, X_train, y_train, x_input, scaler_y, last_level)
+    """
     variablen = variablen_for(covariates)
     df, df_clean, _, _ = load_prepared_df(covariates)
 
+    # Split: Trainings- und Test-Indizes
+    t_train = df_clean.index.get_loc(TRAINING_ENDE)  # Letzte Training-Position
+
+    # Skalierung NUR auf Trainingsdaten (KORREKTUR 1.5)
     scaler_x = MinMaxScaler()
     scaler_y = MinMaxScaler()
-    X_data = scaler_x.fit_transform(df_clean[variablen].values)
-    y_data = scaler_y.fit_transform(df_clean[[TARGET_DIFF]].values)
 
+    train_data = df_clean.loc[:TRAINING_ENDE][variablen].values
+    train_diff = df_clean.loc[:TRAINING_ENDE][[TARGET_DIFF]].values
+
+    scaler_x.fit(train_data)
+    scaler_y.fit(train_diff)
+
+    # Gesamte Daten skalieren (mit Train-Parametern)
+    X_data = scaler_x.transform(df_clean[variablen].values)
+    y_data = scaler_y.transform(df_clean[[TARGET_DIFF]].values)
+
+    # Sequenzen erstellen
     X_seq, y_seq = create_sequences(X_data, y_data, GEDAECHTNIS, PROGNOSEHORIZONT)
-    split_idx = df_clean.index.get_loc(TRAINING_ENDE) - GEDAECHTNIS
-    X_train, y_train = X_seq[:split_idx], y_seq[:split_idx]
 
-    input_idx = df_clean.index.get_loc(TRAINING_ENDE)
-    x_input = X_data[input_idx - GEDAECHTNIS : input_idx].flatten().reshape(1, -1)
+    # Data Leakage verhindern (KORREKTUR 1.3)
+    # Nur Sequenzen nehmen, deren Targets vollständig im Trainingsbereich liegen
+    max_train_start = t_train - GEDAECHTNIS - PROGNOSEHORIZONT + 1
+    n_train_seqs = max(0, max_train_start + 1)
+    X_train, y_train = X_seq[:n_train_seqs], y_seq[:n_train_seqs]
+
+    # Input für Prognose: letztes vollständiges Fenster bis TRAINING_ENDE (KORREKTUR 1.4)
+    x_input = X_data[t_train - GEDAECHTNIS + 1 : t_train + 1].flatten().reshape(1, -1)
+
     last_level = float(df.loc[TRAINING_ENDE, TARGET_COL])
 
     return df, df_clean, X_train, y_train, x_input, scaler_y, last_level
@@ -197,43 +347,24 @@ def predict_sequence_model(
     simulations: int = 1,
     seed: int = SEED,
 ) -> np.ndarray:
+    """Prognostiziert mit Sequence-Modellen (Ensemble über Seeds).
+
+    Args:
+        model_name: "linreg", "ffn" oder "xgboost"
+        covariates: Liste der zu nutzenden Kovariaten
+        simulations: Anzahl der Ensemble-Durchläufe
+        seed: Basis-Seed für Reproduzierbarkeit
+
+    Returns:
+        Array mit Prognose-Volumen (gemittelt über Simulations)
+    """
     df, df_clean, X_train, y_train, x_input, scaler_y, last_level = _prepare_sequence_data(
         covariates
     )
     ensemble: list[np.ndarray] = []
 
     for i in range(simulations):
-        if model_name == "linreg":
-            rng = np.random.default_rng(seed + i)
-            boot_idx = rng.choice(len(X_train), size=len(X_train), replace=True)
-            model = MultiOutputRegressor(LinearRegression())
-            model.fit(X_train[boot_idx], y_train[boot_idx])
-        elif model_name == "ffn":
-            model = MLPRegressor(
-                hidden_layer_sizes=(128, 64),
-                activation="relu",
-                max_iter=500,
-                early_stopping=True,
-                validation_fraction=0.1,
-                random_state=seed + i,
-                learning_rate_init=1e-3,
-            )
-            model.fit(X_train, y_train)
-        elif model_name == "xgboost":
-            from xgboost import XGBRegressor
-
-            model = MultiOutputRegressor(
-                XGBRegressor(
-                    n_estimators=100,
-                    learning_rate=0.05,
-                    max_depth=5,
-                    random_state=seed + i,
-                    subsample=0.8,
-                )
-            )
-            model.fit(X_train, y_train)
-        else:
-            raise ValueError(f"Unbekanntes Sequenzmodell: {model_name}")
+        model = fit_sequence_model(model_name, X_train, y_train, seed=seed + i)
 
         raw = model.predict(x_input).reshape(PROGNOSEHORIZONT, 1)
         diff_pred = scaler_y.inverse_transform(raw).flatten()
@@ -243,6 +374,7 @@ def predict_sequence_model(
 
 
 def _add_tft_columns(frame: pd.DataFrame) -> pd.DataFrame:
+    """Präpariert DataFrame für TFT (fügt time_idx und group_id hinzu)."""
     out = frame.reset_index()
     if "Datum" not in out.columns:
         out = out.rename(columns={out.columns[0]: "Datum"})
@@ -251,7 +383,8 @@ def _add_tft_columns(frame: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def _to_numpy(pred):
+def _to_numpy(pred) -> np.ndarray:
+    """Konvertiert PyTorch/andere Outputs zu NumPy."""
     if hasattr(pred, "output"):
         pred = pred.output
     if isinstance(pred, torch.Tensor):
@@ -259,11 +392,40 @@ def _to_numpy(pred):
     return np.asarray(pred)
 
 
-def fit_tft(train_df: pd.DataFrame, known_reals: list[str], seed: int):
+def fit_tft(
+    train_df: pd.DataFrame, known_reals: list[str], seed: int
+) -> tuple[TemporalFusionTransformer, TimeSeriesDataSet]:
+    """Trainiert TFT mit echtem Val-Split (KORREKTUR 1.6).
+
+    KORREKTUR 1.6: Train/Val-Split auf Zeitachse (nicht per Loader-Flag).
+    Letzte TFT_VAL_FRACTION (20%) der Trainingsdaten als Validierung.
+
+    SZENARIO 2A: Kovariaten sind historisch; es gibt keine "zukünftigen" Kovariate
+    für den Forecast-Horizont. TFT wird mit last_known_reals = nan trainiert.
+
+    Args:
+        train_df: Trainingsdaten (bis TRAINING_ENDE)
+        known_reals: Liste von Kovariaten-Namen
+        seed: Random seed
+
+    Returns:
+        (tft_model, training_dataset)
+    """
     pl.seed_everything(seed, workers=True)
     torch.manual_seed(seed)
 
-    train_tft = _add_tft_columns(train_df)
+    # Train/Val-Split auf Zeitachse
+    n_train = len(train_df)
+    n_val = max(1, int(n_train * TFT_VAL_FRACTION))
+    split_idx = n_train - n_val
+
+    train_part = train_df.iloc[:split_idx]
+    val_part = train_df.iloc[split_idx:]
+
+    train_tft = _add_tft_columns(train_part)
+    val_tft = _add_tft_columns(val_part)
+
+    # Trainings-Dataset (mit allen Daten, aber Split wird im Loader definiert)
     training = TimeSeriesDataSet(
         train_tft,
         time_idx="time_idx",
@@ -281,8 +443,13 @@ def fit_tft(train_df: pd.DataFrame, known_reals: list[str], seed: int):
         add_encoder_length=True,
     )
 
+    # Validierungs-Dataset (separater Zeitbereich)
+    validation = TimeSeriesDataSet.from_dataset(
+        training, val_tft, predict=False, stop_randomization=True
+    )
+
     train_loader = training.to_dataloader(train=True, batch_size=TFT_BATCH_SIZE, num_workers=0)
-    val_loader = training.to_dataloader(train=False, batch_size=TFT_BATCH_SIZE, num_workers=0)
+    val_loader = validation.to_dataloader(train=False, batch_size=TFT_BATCH_SIZE, num_workers=0)
 
     tft = TemporalFusionTransformer.from_dataset(
         training,
@@ -308,11 +475,44 @@ def fit_tft(train_df: pd.DataFrame, known_reals: list[str], seed: int):
 
 
 def predict_tft_multi_step(
-    model, training_dataset, history_df: pd.DataFrame, future_df: pd.DataFrame
+    model: TemporalFusionTransformer,
+    training_dataset: TimeSeriesDataSet,
+    history_df: pd.DataFrame,
 ) -> np.ndarray:
-    combined = pd.concat([history_df, future_df], axis=0)
-    combined = combined[~combined.index.duplicated(keep="last")]
-    combined = _add_tft_columns(combined)
+    """Prognostiziert mit TFT über mehrere Schritte (Multi-Step).
+
+    SZENARIO 2A: Keine zukünftigen Kovariatenwerte (nur historisch).
+    Das DataFrame history_df endet an TRAINING_ENDE.
+
+    Args:
+        model: Trainiertes TFT-Modell
+        training_dataset: Training-Dataset (für Metadaten)
+        history_df: Historische Daten für Encoding (bis TRAINING_ENDE)
+
+    Returns:
+        Prognose-Differenzen für PROGNOSEHORIZONT Schritte
+    """
+    # Für TFT brauchen wir ein DataFrame mit time_idx für die Zukunft
+    # Aber ohne echte zukünftige Kovariate-Werte (Szenario 2A)
+    # → Wir erstellen einen "dummy" future DataFrame
+    history_prep = _add_tft_columns(history_df)
+    max_time_idx = history_prep["time_idx"].max()
+
+    # Future DataFrame: Struktur, aber nan Kovariaten
+    future_rows = []
+    for i in range(1, PROGNOSEHORIZONT + 1):
+        row = {GROUP_ID: "deposits", "time_idx": max_time_idx + i}
+        # Kovariaten setzen auf NaN (nicht verfügbar, Szenario 2A)
+        for cov in training_dataset.time_varying_known_reals:
+            row[cov] = np.nan
+        # Target-Spalten setzen auf NaN (werden prognostiziert)
+        row[TARGET_COL] = np.nan
+        row[TARGET_DIFF] = np.nan
+        row["Datum"] = pd.Timestamp("1900-01-01")  # Dummy
+        future_rows.append(row)
+
+    future_tft = pd.DataFrame(future_rows)
+    combined = pd.concat([history_prep, future_tft], ignore_index=True)
 
     predict_ds = TimeSeriesDataSet.from_dataset(
         training_dataset, combined, predict=True, stop_randomization=True
@@ -333,20 +533,28 @@ def predict_tft_forecast(
     simulations: int = 1,
     seed: int = SEED,
 ) -> np.ndarray:
-    df, df_clean, train_df, future_df = load_prepared_df(covariates)
+    """Prognostiziert mit TFT (Ensemble über Seeds).
+
+    SZENARIO 2A: Nur historische Kovariaten, keine Zukunftswerte.
+
+    Args:
+        covariates: Liste der Kovariaten-Namen
+        simulations: Anzahl der Ensemble-Durchläufe
+        seed: Basis-Seed
+
+    Returns:
+        Gemittelte Prognose des Volumens
+    """
+    df, df_clean, train_df, _ = load_prepared_df(covariates)
     min_train = GEDAECHTNIS + PROGNOSEHORIZONT + 10
     if len(train_df) < min_train:
         raise ValueError(f"Zu wenig Trainingsdaten: {len(train_df)} < {min_train}")
-
-    future_df = future_df.copy()
-    future_df[TARGET_COL] = train_df[TARGET_COL].iloc[-1]
-    future_df[TARGET_DIFF] = train_df[TARGET_DIFF].iloc[-1]
 
     last_level = float(df.loc[TRAINING_ENDE, TARGET_COL])
     ensemble: list[np.ndarray] = []
     for i in range(simulations):
         model, ds = fit_tft(train_df, covariates, seed=seed + i)
-        diff_pred = predict_tft_multi_step(model, ds, train_df, future_df)
+        diff_pred = predict_tft_multi_step(model, ds, train_df)
         ensemble.append(reconstruct_volume(diff_pred, last_level))
     return np.mean(ensemble, axis=0)
 
@@ -365,6 +573,17 @@ def run_single_evaluation(
     covariate_label: str,
     simulations: int = 1,
 ) -> ForecastResult:
+    """Führt eine komplette Modell-Evaluation durch.
+
+    Args:
+        model_name: "linreg", "ffn", "xgboost" oder "tft"
+        covariates: Liste der Kovariaten
+        covariate_label: Label für Ergebnisse
+        simulations: Anzahl Ensemble-Durchläufe
+
+    Returns:
+        ForecastResult mit Metriken und Prognosen
+    """
     if not covariates:
         raise ValueError("Mindestens eine Kovariate erforderlich.")
 
@@ -391,6 +610,7 @@ def run_single_evaluation(
 
 
 def results_to_dataframe(results: Iterable[ForecastResult]) -> pd.DataFrame:
+    """Konvertiert ForecastResults zu pandas DataFrame (sortiert nach MAE_Volumen)."""
     rows = []
     for r in results:
         rows.append(
@@ -415,21 +635,21 @@ def run_ensemble_volume_paths(
     covariates: list[str] | None = None,
     simulations: int = SIMULATIONEN,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, pd.DataFrame]:
-    """Für Plot-Skripte: Mittelwert + KI-Bänder + Roh-DataFrame."""
+    """Für Plot-Skripte: Mittelwert + KI-Bänder + Roh-DataFrame.
+
+    Returns:
+        (mean_forecast, ki90_bands, ki98_bands, all_paths, dataframe)
+    """
     covariates = covariates or ALL_COVARIATES
-    variablen = variablen_for(covariates)
     df, df_clean, _, _ = load_prepared_df(covariates)
 
     if model_name == "tft":
-        df_raw, train_df, future_df = df, df_clean.loc[:TRAINING_ENDE].copy(), None
-        future_df = df_clean.loc[INPUT_ANFANG:].iloc[:PROGNOSEHORIZONT].copy()
-        future_df[TARGET_COL] = train_df[TARGET_COL].iloc[-1]
-        future_df[TARGET_DIFF] = train_df[TARGET_DIFF].iloc[-1]
         last_level = float(df.loc[TRAINING_ENDE, TARGET_COL])
         paths = []
         for i in range(simulations):
+            _, _, train_df, _ = load_prepared_df(covariates)
             model, ds = fit_tft(train_df, covariates, seed=SEED + i)
-            diff_pred = predict_tft_multi_step(model, ds, train_df, future_df)
+            diff_pred = predict_tft_multi_step(model, ds, train_df)
             paths.append(reconstruct_volume(diff_pred, last_level))
     else:
         _, _, X_train, y_train, x_input, scaler_y, last_level = _prepare_sequence_data(
@@ -437,38 +657,7 @@ def run_ensemble_volume_paths(
         )
         paths = []
         for i in range(simulations):
-            if model_name == "linreg":
-                rng = np.random.default_rng(SEED + i)
-                boot_idx = rng.choice(len(X_train), size=len(X_train), replace=True)
-                model = MultiOutputRegressor(LinearRegression())
-                model.fit(X_train[boot_idx], y_train[boot_idx])
-            elif model_name == "ffn":
-                model = MLPRegressor(
-                    hidden_layer_sizes=(128, 64),
-                    activation="relu",
-                    max_iter=500,
-                    early_stopping=True,
-                    validation_fraction=0.1,
-                    random_state=SEED + i,
-                    learning_rate_init=1e-3,
-                )
-                model.fit(X_train, y_train)
-            elif model_name == "xgboost":
-                from xgboost import XGBRegressor
-
-                model = MultiOutputRegressor(
-                    XGBRegressor(
-                        n_estimators=100,
-                        learning_rate=0.05,
-                        max_depth=5,
-                        random_state=SEED + i,
-                        subsample=0.8,
-                    )
-                )
-                model.fit(X_train, y_train)
-            else:
-                raise ValueError(model_name)
-
+            model = fit_sequence_model(model_name, X_train, y_train, seed=SEED + i)
             raw = model.predict(x_input).reshape(PROGNOSEHORIZONT, 1)
             diff_pred = scaler_y.inverse_transform(raw).flatten()
             paths.append(reconstruct_volume(diff_pred, last_level))

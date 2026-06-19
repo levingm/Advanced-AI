@@ -14,6 +14,7 @@ import pandas as pd
 from tqdm import tqdm
 
 import common as tc
+from benchmark_viz import save_all_visualizations, save_heatmap, save_boxplot, save_scatter, save_top5_table
 
 
 def parse_args():
@@ -45,6 +46,14 @@ def parse_args():
         help="CSV-Ausgabedatei",
     )
     parser.add_argument("--plot", action="store_true", help="Balkendiagramm speichern")
+    parser.add_argument(
+        "--viz",
+        nargs="?",
+        const="all",
+        default=None,
+        choices=["all", "heatmap", "box", "scatter", "top5"],
+        help="Zusätzliche Analyse-Plots (all = 2a–2d)",
+    )
     parser.add_argument(
         "--plot-file",
         default="covariate_benchmark_plot.png",
@@ -141,6 +150,19 @@ def main():
 
     if args.plot:
         save_benchmark_plot(df, args.plot_file)
+
+    if args.viz:
+        prefix = args.output.replace(".csv", "")
+        if args.viz == "all":
+            save_all_visualizations(df, prefix=prefix)
+        elif args.viz == "heatmap":
+            save_heatmap(df, f"{prefix}_heatmap.png")
+        elif args.viz == "box":
+            save_boxplot(df, f"{prefix}_boxplot.png")
+        elif args.viz == "scatter":
+            save_scatter(df, f"{prefix}_scatter_n_covariates.png")
+        elif args.viz == "top5":
+            save_top5_table(df, f"{prefix}_top5.csv")
 
 
 if __name__ == "__main__":

@@ -2,6 +2,8 @@
 
 Szenario 2A: Realistische Prognose ohne Zukunftswissen der Kovariaten.
 Alle Modelle erhalten nur historische Fenster; keine echten zukünftigen Kovariatenwerte.
+
+TFT: Prognostiziert Kovariaten selbst (time_varying_unknown_reals).
 """
 
 from __future__ import annotations
@@ -393,19 +395,19 @@ def _to_numpy(pred) -> np.ndarray:
 
 
 def fit_tft(
-    train_df: pd.DataFrame, known_reals: list[str], seed: int
+    train_df: pd.DataFrame, unknown_reals: list[str], seed: int
 ) -> tuple[TemporalFusionTransformer, TimeSeriesDataSet]:
-    """Trainiert TFT mit echtem Val-Split (KORREKTUR 1.6).
+    """Trainiert TFT mit echtem Val-Split und Selbst-Prognose von Kovariaten.
 
-    KORREKTUR 1.6: Train/Val-Split auf Zeitachse (nicht per Loader-Flag).
-    Letzte TFT_VAL_FRACTION (20%) der Trainingsdaten als Validierung.
-
-    SZENARIO 2A: Kovariaten sind historisch; es gibt keine "zukünftigen" Kovariate
-    für den Forecast-Horizont. TFT wird mit last_known_reals = nan trainiert.
+    SZENARIO 2A: TFT prognostiziert Kovariaten SELBST!
+    - unknown_reals: Alle Variablen, die TFT selbst lernt zu prognostizieren
+      (Zielgröße + alle Kovariaten)
+    - time_varying_known_reals: LEER (keine Zukunftsvariablen verfügbar)
 
     Args:
         train_df: Trainingsdaten (bis TRAINING_ENDE)
-        known_reals: Liste von Kovariaten-Namen
+        unknown_reals: Liste aller Variablen, die prognostiziert werden
+                      (muss Zielgröße + Kovariaten enthalten)
         seed: Random seed
 
     Returns:
@@ -425,7 +427,7 @@ def fit_tft(
     train_tft = _add_tft_columns(train_part)
     val_tft = _add_tft_columns(val_part)
 
-    # Trainings-Dataset (mit allen Daten, aber Split wird im Loader definiert)
+    # Trainings-Dataset: TFT prognostiziert alles in unknown_reals
     training = TimeSeriesDataSet(
         train_tft,
         time_idx="time_idx",
@@ -435,8 +437,8 @@ def fit_tft(
         min_encoder_length=max(1, GEDAECHTNIS // 2),
         max_prediction_length=PROGNOSEHORIZONT,
         min_prediction_length=PROGNOSEHORIZONT,
-        time_varying_known_reals=known_reals,
-        time_varying_unknown_reals=[TARGET_COL, TARGET_DIFF],
+        time_varying_known_reals=[],  # ← LEER! Keine Zukunftsvariablen verfügbar
+        time_varying_unknown_reals=unknown_reals,  # ← TFT prognostiziert alle diese
         target_normalizer=GroupNormalizer(groups=[GROUP_ID]),
         add_relative_time_idx=True,
         add_target_scales=True,
@@ -481,8 +483,8 @@ def predict_tft_multi_step(
 ) -> np.ndarray:
     """Prognostiziert mit TFT über mehrere Schritte (Multi-Step).
 
-    SZENARIO 2A: Keine zukünftigen Kovariatenwerte (nur historisch).
-    Das DataFrame history_df endet an TRAINING_ENDE.
+    SZENARIO 2A: TFT prognostiziert Kovariaten selbst.
+    Keine echten zukünftigen Kovariatenwerte nötig!
 
     Args:
         model: Trainiertes TFT-Modell
@@ -490,25 +492,22 @@ def predict_tft_multi_step(
         history_df: Historische Daten für Encoding (bis TRAINING_ENDE)
 
     Returns:
-        Prognose-Differenzen für PROGNOSEHORIZONT Schritte
+        Prognose-Differenzen (TARGET_DIFF) für PROGNOSEHORIZONT Schritte
     """
-    # Für TFT brauchen wir ein DataFrame mit time_idx für die Zukunft
-    # Aber ohne echte zukünftige Kovariate-Werte (Szenario 2A)
-    # → Wir erstellen einen "dummy" future DataFrame
     history_prep = _add_tft_columns(history_df)
     max_time_idx = history_prep["time_idx"].max()
 
-    # Future DataFrame: Struktur, aber nan Kovariaten
+    # Future DataFrame: Struktur für TFT, aber ohne echte Werte
+    # TFT wird die fehlenden Werte selbst prognostizieren
     future_rows = []
     for i in range(1, PROGNOSEHORIZONT + 1):
         row = {GROUP_ID: "deposits", "time_idx": max_time_idx + i}
-        # Kovariaten setzen auf NaN (nicht verfügbar, Szenario 2A)
-        for cov in training_dataset.time_varying_known_reals:
-            row[cov] = np.nan
-        # Target-Spalten setzen auf NaN (werden prognostiziert)
-        row[TARGET_COL] = np.nan
-        row[TARGET_DIFF] = np.nan
-        row["Datum"] = pd.Timestamp("1900-01-01")  # Dummy
+        # Alle Variablen (Zielgröße + Kovariaten) auf NaN
+        # TFT wird diese prognostizieren
+        for var in training_dataset.time_varying_unknown_reals:
+            row[var] = np.nan
+        # Dummy-Datum (wird ignoriert)
+        row["Datum"] = pd.Timestamp("1900-01-01")
         future_rows.append(row)
 
     future_tft = pd.DataFrame(future_rows)
@@ -524,6 +523,8 @@ def predict_tft_multi_step(
             trainer_kwargs=dict(accelerator="cpu", logger=False, enable_checkpointing=False),
         )
     )
+    # pred ist shape (1, PROGNOSEHORIZONT) oder ähnlich
+    # Extrahiere die letzten PROGNOSEHORIZONT Werte (TARGET_DIFF Prognosen)
     flat = pred.reshape(-1)
     return flat[-PROGNOSEHORIZONT:]
 
@@ -535,7 +536,7 @@ def predict_tft_forecast(
 ) -> np.ndarray:
     """Prognostiziert mit TFT (Ensemble über Seeds).
 
-    SZENARIO 2A: Nur historische Kovariaten, keine Zukunftswerte.
+    SZENARIO 2A: TFT prognostiziert Kovariaten selbst.
 
     Args:
         covariates: Liste der Kovariaten-Namen
@@ -550,10 +551,13 @@ def predict_tft_forecast(
     if len(train_df) < min_train:
         raise ValueError(f"Zu wenig Trainingsdaten: {len(train_df)} < {min_train}")
 
+    # TFT prognostiziert: TARGET_DIFF + alle Kovariaten
+    unknown_reals = [TARGET_COL, TARGET_DIFF] + covariates
+
     last_level = float(df.loc[TRAINING_ENDE, TARGET_COL])
     ensemble: list[np.ndarray] = []
     for i in range(simulations):
-        model, ds = fit_tft(train_df, covariates, seed=seed + i)
+        model, ds = fit_tft(train_df, unknown_reals, seed=seed + i)
         diff_pred = predict_tft_multi_step(model, ds, train_df)
         ensemble.append(reconstruct_volume(diff_pred, last_level))
     return np.mean(ensemble, axis=0)
@@ -616,9 +620,9 @@ def results_to_dataframe(results: Iterable[ForecastResult]) -> pd.DataFrame:
         rows.append(
             {
                 "Modell": r.model,
-                "Kovariaten": ", ".join(r.covariates),
+                "Kovariaten": ", ".join(r.covariaten),
                 "Label": r.covariate_label,
-                "n_Kovariaten": len(r.covariates),
+                "n_Kovariaten": len(r.covariaten),
                 "MAE_Diff": r.mae_diff,
                 "RMSE_Diff": r.rmse_diff,
                 "R2_Diff": r.r2_diff,
@@ -640,20 +644,21 @@ def run_ensemble_volume_paths(
     Returns:
         (mean_forecast, ki90_bands, ki98_bands, all_paths, dataframe)
     """
-    covariates = covariates or ALL_COVARIATES
-    df, df_clean, _, _ = load_prepared_df(covariates)
+    covariaten = covariaten or ALL_COVARIATES
+    df, df_clean, _, _ = load_prepared_df(covariaten)
 
     if model_name == "tft":
+        unknown_reals = [TARGET_COL, TARGET_DIFF] + covariaten
         last_level = float(df.loc[TRAINING_ENDE, TARGET_COL])
         paths = []
         for i in range(simulations):
-            _, _, train_df, _ = load_prepared_df(covariates)
-            model, ds = fit_tft(train_df, covariates, seed=SEED + i)
+            _, _, train_df, _ = load_prepared_df(covariaten)
+            model, ds = fit_tft(train_df, unknown_reals, seed=SEED + i)
             diff_pred = predict_tft_multi_step(model, ds, train_df)
             paths.append(reconstruct_volume(diff_pred, last_level))
     else:
         _, _, X_train, y_train, x_input, scaler_y, last_level = _prepare_sequence_data(
-            covariates
+            covariaten
         )
         paths = []
         for i in range(simulations):

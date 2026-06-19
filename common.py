@@ -9,8 +9,10 @@ TFT: Prognostiziert Kovariaten selbst (time_varying_unknown_reals).
 from __future__ import annotations
 
 import itertools
+import sys
 import warnings
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Iterable
 
 import lightning.pytorch as pl
@@ -274,10 +276,20 @@ def fit_sequence_model(
         )
         model.fit(X_train, y_train)
     elif model_name == "xgboost":
-        from xgboost import XGBRegressor
+        # Import aus xgboost-Package (nicht aus lokaler xgboost.py Datei)
+        try:
+            # Entferne lokalen Pfad aus sys.path, um xgboost-Package zu laden
+            local_path = str(Path.cwd())
+            if local_path in sys.path:
+                sys.path.remove(local_path)
+            from xgboost import XGBRegressor as XGB_Regressor
+            if local_path not in sys.path:
+                sys.path.insert(0, local_path)
+        except ImportError:
+            raise ImportError("xgboost package not installed. Install with: pip install xgboost")
 
         model = MultiOutputRegressor(
-            XGBRegressor(
+            XGB_Regressor(
                 n_estimators=100,
                 learning_rate=0.05,
                 max_depth=5,
@@ -620,9 +632,9 @@ def results_to_dataframe(results: Iterable[ForecastResult]) -> pd.DataFrame:
         rows.append(
             {
                 "Modell": r.model,
-                "Kovariaten": ", ".join(r.covariaten),
+                "Kovariaten": ", ".join(r.covariates),
                 "Label": r.covariate_label,
-                "n_Kovariaten": len(r.covariaten),
+                "n_Kovariaten": len(r.covariates),
                 "MAE_Diff": r.mae_diff,
                 "RMSE_Diff": r.rmse_diff,
                 "R2_Diff": r.r2_diff,
@@ -644,21 +656,21 @@ def run_ensemble_volume_paths(
     Returns:
         (mean_forecast, ki90_bands, ki98_bands, all_paths, dataframe)
     """
-    covariaten = covariaten or ALL_COVARIATES
-    df, df_clean, _, _ = load_prepared_df(covariaten)
+    covariates = covariates or ALL_COVARIATES
+    df, df_clean, _, _ = load_prepared_df(covariates)
 
     if model_name == "tft":
-        unknown_reals = [TARGET_COL, TARGET_DIFF] + covariaten
+        unknown_reals = [TARGET_COL, TARGET_DIFF] + covariates
         last_level = float(df.loc[TRAINING_ENDE, TARGET_COL])
         paths = []
         for i in range(simulations):
-            _, _, train_df, _ = load_prepared_df(covariaten)
+            _, _, train_df, _ = load_prepared_df(covariates)
             model, ds = fit_tft(train_df, unknown_reals, seed=SEED + i)
             diff_pred = predict_tft_multi_step(model, ds, train_df)
             paths.append(reconstruct_volume(diff_pred, last_level))
     else:
         _, _, X_train, y_train, x_input, scaler_y, last_level = _prepare_sequence_data(
-            covariaten
+            covariates
         )
         paths = []
         for i in range(simulations):

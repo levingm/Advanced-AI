@@ -4,8 +4,10 @@ Kovariaten-Benchmark: vergleicht Prognosegüte über Modell × Kovariaten-Kombin
 Ausgabe:
   - Tabelle in der Konsole (sortiert nach MAE_Volumen)
   - CSV: covariate_benchmark_results.csv
-  - optional: Balkendiagramm der besten Kombinationen pro Modell
+  - Optional: Visualisierungen (--viz) und Rolling-Origin-Evaluation (--rolling)
 """
+
+from __future__ import annotations
 
 import argparse
 
@@ -14,19 +16,27 @@ import pandas as pd
 from tqdm import tqdm
 
 import common as tc
-from benchmark_viz import save_all_visualizations, save_heatmap, save_boxplot, save_scatter, save_top5_table
+from benchmark_viz import (
+    save_all_visualizations,
+    save_boxplot,
+    save_heatmap,
+    save_rolling_plot,
+    save_scatter,
+    save_top5_table,
+)
 
 
-def parse_args():
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Benchmark: Modellgüte nach Kovariaten-Kombination"
     )
     parser.add_argument(
         "--modelle",
         nargs="+",
-        default=["linreg", "xgboost"],
-        choices=["xgboost", "linreg", "ffn", "tft"],
-        help="Zu testende Modelle (tft ist langsam)",
+        # FIX 2: Naive Benchmarks als wählbare Modelle
+        default=["naive_rw", "naive_hold", "linreg", "xgboost"],
+        choices=tc.ALL_MODELS,
+        help="Zu testende Modelle (tft ist langsam; naive_rw/naive_hold = Benchmarks)",
     )
     parser.add_argument(
         "--kovariaten-modus",
@@ -43,40 +53,49 @@ def parse_args():
     parser.add_argument(
         "--output",
         default="covariate_benchmark_results.csv",
-        help="CSV-Ausgabedatei",
+        help="CSV-Ausgabedatei (Einzelpunkt-Evaluation)",
     )
     parser.add_argument("--plot", action="store_true", help="Balkendiagramm speichern")
+    parser.add_argument(
+        "--plot-file",
+        default="covariate_benchmark_plot.png",
+        help="PNG für Benchmark-Balkendiagramm",
+    )
     parser.add_argument(
         "--viz",
         nargs="?",
         const="all",
         default=None,
         choices=["all", "heatmap", "box", "scatter", "top5"],
-        help="Zusätzliche Analyse-Plots (all = 2a–2d)",
+        help="Analyse-Plots: all = Heatmap + Box + Scatter + Top5",
+    )
+    # FIX 1: Rolling-Origin-Evaluation als CLI-Option
+    parser.add_argument(
+        "--rolling",
+        action="store_true",
+        help="Rollierende Out-of-Sample-Evaluation über mehrere Origins",
     )
     parser.add_argument(
-        "--plot-file",
-        default="covariate_benchmark_plot.png",
-        help="PNG für Benchmark-Plot",
+        "--rolling-freq",
+        default="MS",
+        help="Frequenz der Rolling-Origins (Pandas-Alias, z.B. 'MS'=monatlich, 'QS'=quartalsweise)",
+    )
+    parser.add_argument(
+        "--rolling-output",
+        default="covariate_benchmark_rolling.csv",
+        help="CSV-Ausgabe für Rolling-Ergebnisse",
     )
     return parser.parse_args()
 
 
-def print_summary_table(df: pd.DataFrame):
-    """Gibt Zusammenfassung der Benchmark-Ergebnisse aus."""
-    print("\n" + "=" * 100)
+def print_summary_table(df: pd.DataFrame) -> None:
+    print("\n" + "=" * 110)
     print("KOVARIATEN-BENCHMARK (sortiert nach MAE_Volumen)")
-    print("=" * 100)
+    print("=" * 110)
     cols = [
-        "Modell",
-        "Label",
-        "n_Kovariaten",
-        "MAE_Diff",
-        "RMSE_Diff",
-        "R2_Diff",
-        "MAE_Volumen",
-        "RMSE_Volumen",
-        "R2_Volumen",
+        "Modell", "Label", "n_Kovariaten",
+        "MAE_Diff", "RMSE_Diff", "R2_Diff",
+        "MAE_Volumen", "RMSE_Volumen", "R2_Volumen",
         "Kovariaten",
     ]
     print(df[cols].to_string(index=False, float_format=lambda x: f"{x:.4f}"))
@@ -86,8 +105,7 @@ def print_summary_table(df: pd.DataFrame):
     print(best[cols].to_string(index=False, float_format=lambda x: f"{x:.4f}"))
 
 
-def save_benchmark_plot(df: pd.DataFrame, path: str):
-    """Speichert Bar-Plot der besten Kombinationen pro Modell."""
+def save_benchmark_plot(df: pd.DataFrame, path: str) -> None:
     best = df.loc[df.groupby("Modell")["MAE_Volumen"].idxmin()].copy()
     best = best.sort_values("MAE_Volumen")
 
@@ -101,42 +119,44 @@ def save_benchmark_plot(df: pd.DataFrame, path: str):
     ax.set_ylabel("MAE Volumen [Mrd. €]")
     ax.set_title("Beste Kovariaten-Kombination pro Modell")
     ax.tick_params(axis="x", rotation=25)
-    plt.tight_layout()
     for bar, val in zip(bars, best["MAE_Volumen"]):
         ax.text(
             bar.get_x() + bar.get_width() / 2,
             bar.get_height(),
             f"{val:.3f}",
-            ha="center",
-            va="bottom",
-            fontsize=8,
+            ha="center", va="bottom", fontsize=8,
         )
+    plt.tight_layout()
     plt.savefig(path, dpi=150)
     plt.close()
-    print(f"\nPlot gespeichert: {path}")
+    print(f"Plot gespeichert: {path}")
 
 
-def main():
-    args = parse_args()
+def run_single_benchmark(args: argparse.Namespace) -> pd.DataFrame:
+    """Einzelpunkt-Evaluation (klassischer Benchmark)."""
     combos = tc.generate_covariate_combinations(args.kovariaten_modus)
-    total = len(combos) * len(args.modelle)
-
-    print(f"Benchmark: {len(args.modelle)} Modell(e) × {len(combos)} Kovariaten-Sets = {total} Läufe")
+    tasks = [(m, cols, label) for m in args.modelle for cols, label in combos]
+    print(
+        f"\nEinzelpunkt-Benchmark: {len(args.modelle)} Modell(e) × {len(combos)} "
+        f"Kovariaten-Sets = {len(tasks)} Läufe"
+    )
     print(f"Modus: {args.kovariaten_modus} | Simulationen: {args.simulationen}")
-    print(f"\nSzenario 2A: Nur historische Kovariaten (realistische Prognose ohne Zukunftswissen)\n")
+    print(
+        "\nHinweis: Ergebnisse basieren auf einem einzelnen Testfenster. "
+        "Für robuste Aussagen --rolling verwenden.\n"
+    )
 
     results = []
-    tasks = [(m, cols, label) for m in args.modelle for cols, label in combos]
-
     for model_name, covariates, label in tqdm(tasks, desc="Benchmark"):
         try:
-            result = tc.run_single_evaluation(
-                model_name=model_name,
-                covariates=covariates,
-                covariate_label=label,
-                simulations=args.simulationen,
+            results.append(
+                tc.run_single_evaluation(
+                    model_name=model_name,
+                    covariates=covariates,
+                    covariate_label=label,
+                    simulations=args.simulationen,
+                )
             )
-            results.append(result)
         except Exception as exc:
             print(f"\n[Fehler] {model_name} / {label}: {exc}")
 
@@ -147,6 +167,52 @@ def main():
     df.to_csv(args.output, index=False, encoding="utf-8-sig")
     print_summary_table(df)
     print(f"\nCSV gespeichert: {args.output}")
+    return df
+
+
+def run_rolling_benchmark(args: argparse.Namespace) -> pd.DataFrame:
+    """Rollierende Evaluation über alle Modelle × Kovariaten-Kombinationen."""
+    combos = tc.generate_covariate_combinations(args.kovariaten_modus)
+    origins = tc.generate_rolling_origins(freq=args.rolling_freq)
+    tasks = [(m, cols, label) for m in args.modelle for cols, label in combos]
+    print(
+        f"\nRolling-Benchmark: {len(args.modelle)} Modell(e) × {len(combos)} Sets "
+        f"× {len(origins)} Origins = {len(tasks) * len(origins)} Läufe"
+    )
+    print(f"Origins ({args.rolling_freq}): {origins[0]} … {origins[-1]}")
+
+    all_rows: list[pd.DataFrame] = []
+    for model_name, covariates, label in tqdm(tasks, desc="Rolling-Benchmark"):
+        try:
+            df_roll = tc.run_rolling_evaluation(
+                model_name=model_name,
+                covariates=covariates,
+                covariate_label=label,
+                simulations=args.simulationen,
+                origins=origins,
+            )
+            all_rows.append(df_roll)
+        except Exception as exc:
+            print(f"\n[Fehler] {model_name} / {label}: {exc}")
+
+    if not all_rows:
+        raise SystemExit("Keine Rolling-Ergebnisse.")
+
+    df_full = pd.concat(all_rows, ignore_index=True)
+    df_full.to_csv(args.rolling_output, index=False, encoding="utf-8-sig")
+    print(f"\nRolling-CSV gespeichert: {args.rolling_output}")
+
+    print("\n--- Aggregierte Rolling-Metriken (Mittelwert ± Std) ---")
+    agg = tc.aggregate_rolling_results(df_full)
+    print(agg.to_string())
+    return df_full
+
+
+def main() -> None:
+    args = parse_args()
+
+    # --- Einzelpunkt-Benchmark ---
+    df = run_single_benchmark(args)
 
     if args.plot:
         save_benchmark_plot(df, args.plot_file)
@@ -163,6 +229,12 @@ def main():
             save_scatter(df, f"{prefix}_scatter_n_covariates.png")
         elif args.viz == "top5":
             save_top5_table(df, f"{prefix}_top5.csv")
+
+    # --- Rolling-Origin-Evaluation (optional) ---
+    if args.rolling:
+        df_roll = run_rolling_benchmark(args)
+        prefix_roll = args.rolling_output.replace(".csv", "")
+        save_rolling_plot(df_roll, f"{prefix_roll}_timeline.png")
 
 
 if __name__ == "__main__":

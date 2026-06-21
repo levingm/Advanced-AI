@@ -1,0 +1,32 @@
+Treesearch Advanced AI TODO
+- [ ] Limitations: static forecast -> Skyforecast python library, I.e. can’t go above training limit after it is set
+1. Generate Explanatory Data Analysis (EDA) Plots (Slide 9 Requirement)
+- [ ] Stationarity Test: Run an Augmented Dickey-Fuller (ADF) test on the raw Einlagevolumen. Why? To prove mathematically that the data is non-stationary and justify your "Scientific Step" of using .diff().
+- [ ] Correlation Matrix: Plot a heatmap (using seaborn) of your 7 variables to show which macroeconomic factors move together.
+- [ ] ACF/PACF Plots: Plot the Autocorrelation of the deposit volumes to scientifically justify your Gedächtnis (lookback window). If the plot shows a spike at 30 or 90 days, that is your mathematical proof for choosing that window size.
+2. Add SHAP for Explainability (Slide 9 "Extra Points")
+- [ ] XGBoost is a black box. Install the shap library and run it on your trained model.
+- [ ] Generate a SHAP Summary Plot. This will show your group exactly which variables (e.g., DAX vs. €STR) were the most important in driving the XGBoost predictions. Professors love SHAP values.
+3. Tune your Parameters (Experimentation)
+- [ ] Test Gedächtnis = 30 vs Gedächtnis = 90. Note how the model reacts.
+- [ ] Test max_depth=3 vs max_depth=6.
+4. Consolidate Metrics with the Group
+- [ ] Write a small function to calculate RMSE (Root Mean Squared Error) and MAE (Mean Absolute Error) for your out-of-sample test period.
+- [ ] Make sure your other group members (doing the baseline AR model or the Neural Network) calculate their metrics on the exact same test dates so you can build a fair comparison table.
+
+The "Discussion & Debate" Checklist (For the Final Report)
+When writing the actual paper (or preparing the presentation), use these exact talking points. This is where you score the "Master's level" points.
+1. Justification of the Methodology (The "Differences" approach)
+* Point: Explain that predicting raw levels of a non-stationary time series leads to poor mean-reversion. By predicting the first difference and reconstructing the level via a cumulative sum, the model correctly learned "momentum" instead of memorizing absolute boundaries.
+2. The Data Leakage Trap (Scientific Rigor)
+* Point: Mention that during the prototyping phase, you observed that fitting the MinMaxScaler on the entire dataset artificially improved test performance by leaking future maximums into the training set. Emphasize that your final model uses strict out-of-sample scaling to ensure absolute scientific honesty.
+3. The Mathematical Limitation of XGBoost (The core debate)
+* Point: Explain why the XGBoost model "flatlines" or misses unprecedented macroeconomic shocks (like the January 2024 bump). State clearly: "Tree-based models partition data into leaves and cannot mathematically extrapolate beyond the minimum or maximum target values seen during training."
+4. Model Comparison (The LMU Requirement)
+* Point: Compare XGBoost to your group's other models.
+* Debate argument: "While XGBoost excels at capturing non-linear interactions between variables like the DAX and inflation, it is outmatched by [Linear Regression / Neural Networks] during structural market breaks, because weight-based models possess the mathematical ability to extrapolate into unknown territory."
+5. Business Relevance & Risk (Slide 7 Requirement)
+* Point: Put on the hat of a bank manager. If a bank uses your static XGBoost model for liquidity forecasting, they are exposed to "Black Swan" risks—the model will not warn them of an unprecedented drop in deposit volumes.
+6. Conclusion & Outlook (Walk-Forward Validation / skforecast)
+* Point: End the paper by outlining how this system would actually be deployed in a real bank.
+The Pitch: "To mitigate XGBoost's extrapolation limits, a production-ready deployment would require Walk-Forward Validation (e.g., using skforecast). By advancing the forecast day-by-day and continuously refitting the model and scaler to newly ingested real-world data, the architecture would dynamically update its boundaries and adapt to market shifts in near real-time."

@@ -20,9 +20,12 @@ def plot_forecast(
         model_name, covariates, simulations=sims
     )
 
-    real_values = df.loc[tc.INPUT_ANFANG:].iloc[: tc.PROGNOSEHORIZONT][tc.TARGET_COL].values
+
+    input_anfang = tc._next_date_in_index(df, tc.TRAINING_ENDE)
+
+    real_values = df.loc[input_anfang:].iloc[: tc.PROGNOSEHORIZONT][tc.TARGET_COL].values
     historie = df.loc[tc.HISTORIE_ANFANG : tc.HISTORIE_ENDE, tc.TARGET_COL]
-    x_zukunft = pd.date_range(tc.INPUT_ANFANG, periods=tc.PROGNOSEHORIZONT, freq="D")
+    x_zukunft = pd.date_range(input_anfang, periods=tc.PROGNOSEHORIZONT, freq="D")
 
     fig, axes = plt.subplots(2, 1, figsize=(15, 10), gridspec_kw={"height_ratios": [3, 1]})
 

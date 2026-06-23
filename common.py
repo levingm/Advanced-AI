@@ -9,6 +9,7 @@ Szenario 2A: Realistische Prognose ohne ex-post Zukunftswissen.
 
 from __future__ import annotations
 
+
 import importlib
 import itertools
 import warnings
@@ -53,7 +54,7 @@ ALL_COVARIATES = [
     "10Y Bond",
 ]
 
-GEDAECHTNIS = 100
+GEDAECHTNIS = 30
 PROGNOSEHORIZONT = 100
 SIMULATIONEN = 5
 SEED = 42
@@ -389,18 +390,21 @@ def fit_sequence_model(
         model.fit(X_train, y_train)
 
     elif model_name == "xgboost":
-        XGB = importlib.import_module("xgboost").XGBRegressor
+        XGBRegressor = importlib.import_module("xgboost").XGBRegressor
     
-        model = xgb.XGBRegressor(
-            n_estimators=100,
-            learning_rate=0.05,
-            max_depth=5,
-            random_state=seed,
-            subsample=0.8,
-            multi_strategy="multi_output_tree",
-            tree_method="hist",
-            n_jobs=1
+        # 1. Basis-Modell mit Parametern aus TreesearchFixedDependencies
+        base_model = XGBRegressor(
+            n_estimators=100, 
+            learning_rate=0.05, 
+            max_depth=4,              # Geringere Tiefe gegen Overfitting
+            subsample=0.7,            # Zeilensubsampling für Varianz im Ensemble
+            colsample_bytree=0.7,     # Spaltensubsampling für Varianz im Ensemble
+            random_state=seed,        # Erhält dynamisch 'seed + i' aus der Schleife
+            n_jobs=1                  # 1 Kern pro Baum (sicher gegen Threading-Hangs)
         )
+        
+        # 2. Wrapper für Multi-Step-Direktprognose
+        model = MultiOutputRegressor(base_model)
         model.fit(X_train, y_train)
 
     else:
@@ -505,19 +509,7 @@ def fit_tft(
     covariates: list[str],
     seed: int,
 ) -> tuple[TemporalFusionTransformer, TimeSeriesDataSet]:
-    """Trainiert TFT mit korrektem zeitlichem Val-Split.
-
-    FIX 3 (TFT-Val ohne Encoder-Historie):
-    Der Validierungs-Dataset wird aus dem VOLLEN train_tft_full-Frame erzeugt,
-    nicht nur aus den letzten n_val Zeilen. So hat der Encoder die notwendige
-    Historie. min_prediction_idx begrenzt die Val-Vorhersagen auf den Val-Bereich.
-
-    FIX 4 (TFT trainiert weniger Daten):
-    Das Training-TimeSeriesDataSet nutzt train_tft_full bis split_idx; die Val-
-    Sequenzen greifen für den Encoder auf den vollen Frame zurück. TFT und die
-    anderen Modelle trainieren auf identischem Zeitraum; nur die letzten TFT_VAL_FRACTION
-    werden nicht als Decoder-Ziel im Training genutzt (notwendig für echtes EarlyStopping).
-    """
+    """Trainiert TFT im Standard-Benchmark-Design (Kovariaten als unknown_reals)."""
     pl.seed_everything(seed, workers=True)
     torch.manual_seed(seed)
 
@@ -528,8 +520,10 @@ def fit_tft(
 
     train_only = train_tft_full[train_tft_full["time_idx"] <= split_idx]
 
-    unknown_reals = [TARGET_COL, TARGET_DIFF]
-    known_reals = list(covariates)
+    # STANDARD-BENCHMARK: Alle makroökonomischen Kovariaten sind zukünftig UNBEKANNT.
+    # Sie werden nur im Encoder (Vergangenheit) zur Kontextbildung genutzt.
+    unknown_reals = [TARGET_COL, TARGET_DIFF] + list(covariates)
+    known_reals = []  # Leer im Standard-Benchmark
 
     training = TimeSeriesDataSet(
         train_only,
@@ -548,7 +542,7 @@ def fit_tft(
         add_encoder_length=True,
     )
 
-    # FIX 3: Voller Frame für Encoder-Historie; nur Val-Zeitraum wird vorhergesagt
+    # Voller Frame für Encoder-Historie; nur Val-Zeitraum wird vorhergesagt
     validation = TimeSeriesDataSet.from_dataset(
         training,
         train_tft_full,               # voller Frame → Encoder hat vollständige Historie
@@ -589,15 +583,14 @@ def predict_tft_multi_step(
     history_df: pd.DataFrame,
     covariates: list[str],
 ) -> np.ndarray:
-    """Multi-Step-TFT-Prognose mit Naive-Hold für Kovariaten (Szenario 2A).
+    """Multi-Step-TFT-Prognose für den Standard-Benchmark.
 
-    Kovariaten werden im Decoder auf dem letzten bekannten Wert eingefroren –
-    kein ex-post Oracle. Zielvariablen (Einlagevolumen, Diff_Volume) sind NaN.
+    Kovariaten werden im Vorhersagefenster (Decoder) sauber auf NaN gesetzt,
+    da das Modell so trainiert wurde, sie in der Zukunft zu ignorieren.
     """
     history_prep = _add_tft_columns(history_df)
     max_time_idx = int(history_prep["time_idx"].max())
-    last_row = history_df.iloc[-1]
-    last_date = history_df.index[-1]
+    last_date = history_prep["Datum"].max()
 
     future_rows = []
     for i in range(1, PROGNOSEHORIZONT + 1):
@@ -608,8 +601,10 @@ def predict_tft_multi_step(
             TARGET_COL: np.nan,
             TARGET_DIFF: np.nan,
         }
+        # Im Standard-Benchmark werden Kovariaten im Testzeitraum auf NaN gesetzt.
+        # Der Decoder greift nicht darauf zu.
         for cov in covariates:
-            row[cov] = float(last_row[cov])
+            row[cov] = np.nan
         future_rows.append(row)
 
     combined = pd.concat([history_prep, pd.DataFrame(future_rows)], ignore_index=True)

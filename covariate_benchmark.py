@@ -29,6 +29,7 @@ from benchmark_viz import (
     save_boxplot,
     save_heatmap,
     save_rolling_plot,
+    save_rolling_summary,
     save_scatter,
     save_top5_table,
 )
@@ -143,7 +144,18 @@ def save_benchmark_plot(df: pd.DataFrame, path: str) -> None:
 def run_single_benchmark(args: argparse.Namespace) -> pd.DataFrame:
     """Einzelpunkt-Evaluation (klassischer Benchmark)."""
     combos = tc.generate_covariate_combinations(args.kovariaten_modus)
-    tasks = [(m, cols, label) for m in args.modelle for cols, label in combos]
+
+    # Für naive Modelle reicht ein Lauf (sie verwenden keine Kovariaten im Benchmark-Design)
+    naive_models = set(["naive_rw", "naive_hold"])
+    tasks = []
+    for m in args.modelle:
+        if m in naive_models:
+            # Ein Lauf ohne Kovariaten (Label 'naive' unterscheidet sie)
+            tasks.append((m, [], "naive"))
+        else:
+            for cols, label in combos:
+                tasks.append((m, cols, label))
+
     print(
         f"\nEinzelpunkt-Benchmark: {len(args.modelle)} Modell(e) × {len(combos)} "
         f"Kovariaten-Sets = {len(tasks)} Läufe"
@@ -182,7 +194,16 @@ def run_rolling_benchmark(args: argparse.Namespace) -> pd.DataFrame:
     """Rollierende Evaluation über alle Modelle × Kovariaten-Kombinationen."""
     combos = tc.generate_covariate_combinations(args.kovariaten_modus)
     origins = tc.generate_rolling_origins(freq=args.rolling_freq)
-    tasks = [(m, cols, label) for m in args.modelle for cols, label in combos]
+
+    naive_models = set(["naive_rw", "naive_hold"])
+    tasks = []
+    for m in args.modelle:
+        if m in naive_models:
+            tasks.append((m, [], "naive"))
+        else:
+            for cols, label in combos:
+                tasks.append((m, cols, label))
+
     print(
         f"\nRolling-Benchmark: {len(args.modelle)} Modell(e) × {len(combos)} Sets "
         f"× {len(origins)} Origins = {len(tasks) * len(origins)} Läufe"
@@ -243,6 +264,8 @@ def main() -> None:
         df_roll = run_rolling_benchmark(args)
         prefix_roll = args.rolling_output.replace(".csv", "")
         save_rolling_plot(df_roll, f"{prefix_roll}_timeline.png")
+        # FIX: Rolling-Summary (Boxplots der Rolling-Verteilung) speichern
+        save_rolling_summary(df_roll, f"{prefix_roll}_summary.png")
 
 
 if __name__ == "__main__":

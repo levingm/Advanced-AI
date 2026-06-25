@@ -33,6 +33,8 @@ from sklearn.neural_network import MLPRegressor
 # FIX 6: RobustScaler statt MinMaxScaler (robust gegen Ausreißer in Finanzdaten)
 from sklearn.preprocessing import RobustScaler
 
+
+
 # Nur bekannte, harmlose Warnungen unterdrücken
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 warnings.filterwarnings("ignore", category=UserWarning, module=r"lightning(\..+)?")
@@ -348,6 +350,59 @@ def predict_naive_hold(
 # ---------------------------------------------------------------------------
 # Sequenzmodelle: LinReg, FFN, XGBoost
 # ---------------------------------------------------------------------------
+from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
+
+# -------------------------
+# Hilfsfunktion: Zeitserien-konformes Tuning (FFN + XGBoost)
+# -------------------------
+def tune_sequence_model(model_name: str, X: np.ndarray, y: np.ndarray, seed: int = SEED):
+    """Einfaches Grid-Search-Tuning mit TimeSeriesSplit für FFN und XGBoost.
+    Gibt ein gefittetes Modell zurück (beste Param.-Kombination).
+    Ziel: zeitserien-konformes CV (kein shuffle), vermeidet Leak im FFN.
+    """
+    tscv = TimeSeriesSplit(n_splits=3)
+    if model_name == "ffn":
+        base = MLPRegressor(random_state=seed, max_iter=500, early_stopping=False, n_iter_no_change=50)
+        param_grid = {
+            "hidden_layer_sizes": [(64, 32), (128, 64)],
+            "alpha": [1e-4, 1e-3, 1e-2],
+            "learning_rate_init": [1e-3, 1e-4],
+        }
+        gs = GridSearchCV(base, param_grid, cv=tscv, scoring="neg_mean_absolute_error", n_jobs=1)
+        gs.fit(X, y)
+        print(f"[TUNING] FFN best params: {gs.best_params_} score={gs.best_score_:.4f}")
+        return gs.best_estimator_
+
+    elif model_name == "xgboost":
+        XGB = importlib.import_module("xgboost").XGBRegressor
+        base = XGB(n_estimators=100, random_state=seed, n_jobs=1, verbosity=0, objective="reg:squarederror")
+        # Try native multi-output by directly fitting (GridSearchCV will handle failure later)
+        param_grid = {
+            "max_depth": [3, 4],
+            "learning_rate": [0.05, 0.1],
+            "subsample": [0.6, 0.8],
+            "colsample_bytree": [0.6, 0.8],
+        }
+        # Wrap in MultiOutputRegressor only inside GridSearch if needed — GridSearchCV expects an estimator that supports fit(X,y)
+        # Since some XGBoost versions accept y with shape (n_samples, n_outputs) directly, try direct fit inside GridSearch.
+        gs = GridSearchCV(base, param_grid, cv=tscv, scoring="neg_mean_absolute_error", n_jobs=1)
+        try:
+            gs.fit(X, y)
+            print(f"[TUNING] XGBoost native best params: {gs.best_params_} score={gs.best_score_:.4f}")
+            return gs.best_estimator_
+        except Exception as exc:
+            # Fallback: MultiOutputRegressor around base model
+            from sklearn.multioutput import MultiOutputRegressor
+            wrapped = MultiOutputRegressor(base)
+            # GridSearchCV on wrapped estimator (param prefix 'estimator__' doesn't always work for all wrappers,
+            # so keep tuned params fixed if grid failed natively — use a small default grid instead)
+            print("[TUNING] XGBoost native multi-output failed, fallback to MultiOutputRegressor with default params.")
+            wrapped.fit(X, y)
+            return wrapped
+
+    else:
+        raise ValueError("Tuning only supported for 'ffn' and 'xgboost' in this helper.")
+
 
 def fit_sequence_model(
     model_name: str,
@@ -355,14 +410,13 @@ def fit_sequence_model(
     y_train: np.ndarray,
     seed: int = SEED,
     bootstrap: bool = False,
+    do_tune: bool = False,
 ) -> object:
     """Instanziiert und trainiert ein Sequenzmodell.
 
-    FIX 7 (XGBoost): Nutzt nativen multi_strategy="multi_output_tree" wenn
-    verfügbar (XGBoost >= 1.6) – ein Modell statt 100 separate Regressoren.
-    Fallback auf MultiOutputRegressor für ältere Versionen.
-
-    FIX 3.1 (aus Vorrunde): Zentralisierte Funktion statt duplizierter if/elif-Blöcke.
+    Optionales Tuning via do_tune (GridSearchCV mit TimeSeriesSplit).
+    Für FFN verwenden wir zeitserien-konformes CV statt sklearn-internem shuffle.
+    Für XGBoost versuchen wir native multi-output; falls nicht verfügbar, Fallback.
     """
     if model_name == "linreg":
         model = MultiOutputRegressor(LinearRegression())
@@ -374,38 +428,63 @@ def fit_sequence_model(
             model.fit(X_train, y_train)
 
     elif model_name == "ffn":
-        # Hinweis: sklearn's validation_fraction nutzt intern train_test_split
-        # mit shuffle=True – nicht streng temporal. Für Benchmark akzeptabel,
-        # für Produktiveinsatz Custom-EarlyStopping empfohlen.
-        model = MLPRegressor(
-            hidden_layer_sizes=(128, 64),
-            activation="relu",
-            max_iter=500,
-            early_stopping=True,
-            validation_fraction=TFT_VAL_FRACTION,   # konsistent mit TFT
-            n_iter_no_change=10,
-            random_state=seed,
-            learning_rate_init=1e-3,
-        )
-        model.fit(X_train, y_train)
+        # Verwende GridSearchCV mit TimeSeriesSplit, um temporales Leakage zu vermeiden.
+        if do_tune:
+            model = tune_sequence_model("ffn", X_train, y_train, seed=seed)
+        else:
+            model = MLPRegressor(
+                hidden_layer_sizes=(128, 64),
+                activation="relu",
+                max_iter=500,
+                early_stopping=False,  # kein internal shuffle-based early stopping
+                random_state=seed,
+                learning_rate_init=1e-3,
+            )
+            model.fit(X_train, y_train)
 
     elif model_name == "xgboost":
-        XGBRegressor = importlib.import_module("xgboost").XGBRegressor
-    
-        # 1. Basis-Modell mit Parametern aus TreesearchFixedDependencies
-        base_model = XGBRegressor(
-            n_estimators=100, 
-            learning_rate=0.05, 
-            max_depth=4,              # Geringere Tiefe gegen Overfitting
-            subsample=0.7,            # Zeilensubsampling für Varianz im Ensemble
-            colsample_bytree=0.7,     # Spaltensubsampling für Varianz im Ensemble
-            random_state=seed,        # Erhält dynamisch 'seed + i' aus der Schleife
-            n_jobs=1                  # 1 Kern pro Baum (sicher gegen Threading-Hangs)
+        xgb_kwargs = dict(
+        n_estimators=100,
+        learning_rate=0.05,
+        max_depth=4,
+        subsample=0.7,
+        colsample_bytree=0.7,
+        random_state=seed,
+        n_jobs=1,
         )
-        
-        # 2. Wrapper für Multi-Step-Direktprognose
-        model = MultiOutputRegressor(base_model)
-        model.fit(X_train, y_train)
+        try:
+            XGBRegressor = importlib.import_module("xgboost").XGBRegressor
+        except Exception as exc:
+            raise ImportError("xgboost konnte nicht importiert werden. Bitte installiere xgboost (z.B. pip install xgboost) oder prüfe die Installation.") from exc
+
+    # Heuristische Prüfung auf GPU-fähigen Build und ggf. GPU-Parameter setzen
+        try:
+            import xgboost as xgb_mod  # type: ignore
+            if hasattr(xgb_mod, "__version__") and ("cuda" in xgb_mod.__version__.lower() or "gpu" in xgb_mod.__version__.lower()):
+                xgb_kwargs.update(tree_method="gpu_hist", predictor="gpu_predictor", gpu_id=0)
+        except Exception:
+            # Falls die heuristische Prüfung fehlschlägt, kein GPU-Flag setzen
+            pass
+
+        base_model = XGBRegressor(**xgb_kwargs)
+
+        # Optionales Tuning
+        if do_tune:
+            try:
+                tuned = tune_sequence_model("xgboost", X_train, y_train, seed=seed)
+                return tuned
+            except Exception:
+                pass
+
+        # Versuch, base_model direkt auf multioutput y zu fitten (XGBoost-Version >= 1.6 unterstützt evtl. multi-output)
+        try:
+            base_model.fit(X_train, y_train)
+            model = base_model
+        except Exception:
+            # Fallback auf MultiOutputRegressor (100 separate Modelle)
+            print("[XGBOOST] Native multi-output nicht verfügbar — Fallback auf MultiOutputRegressor.")
+            model = MultiOutputRegressor(base_model)
+            model.fit(X_train, y_train)
 
     else:
         raise ValueError(f"Unbekanntes Sequenzmodell: {model_name!r}")
@@ -567,7 +646,8 @@ def fit_tft(
 
     trainer = pl.Trainer(
         max_epochs=TFT_MAX_EPOCHS,
-        accelerator="cpu",
+        accelerator="gpu" if torch.cuda.is_available() else "cpu",
+        devices=1,
         gradient_clip_val=0.1,
         callbacks=[EarlyStopping(monitor="val_loss", patience=5, mode="min")],
         enable_progress_bar=False,
@@ -612,10 +692,16 @@ def predict_tft_multi_step(
         training_dataset, combined, predict=True, stop_randomization=True
     )
     loader = predict_ds.to_dataloader(train=False, batch_size=1, num_workers=0)
+    trainer_device_kwargs = dict(
+        accelerator="gpu" if torch.cuda.is_available() else "cpu",
+        devices=1,
+        logger=False,
+        enable_checkpointing=False,
+    )
     pred = _to_numpy(
         model.predict(
             loader,
-            trainer_kwargs=dict(accelerator="cpu", logger=False, enable_checkpointing=False),
+            trainer_kwargs=trainer_device_kwargs,
         )
     )
     flat = pred.reshape(-1)
@@ -723,7 +809,8 @@ def generate_rolling_origins(
     """Generiert Evaluations-Origins für Rolling-Origin-Evaluation.
 
     Args:
-        freq:           Pandas-Frequenz der Origins (default: monatlich "MS")
+        freq:           Pandas-Frequenz der Origins (z.B. "MS" monatlich, "YS" jährlich)
+                        oder Jahres-Schritt als "<n>Y" (z.B. "5Y" = alle 5 Jahre).
         last_origin:    Letztes/spätestes Origin-Datum
         min_train_rows: Mindest-Trainingszeilen (default: GD + PH + Puffer)
 
@@ -742,10 +829,18 @@ def generate_rolling_origins(
 
     # Frühestes sinnvolles Origin
     earliest = df_clean.index[min_rows - 1]
-    # Letztes Origin muss noch PROGNOSEHORIZONT Testdaten übrig lassen
     last_ts = pd.Timestamp(last_origin)
 
-    candidates = pd.date_range(earliest, last_ts, freq=freq)
+    # Unterstützung für Jahres-Intervalle im Format '5Y', '10Y' usw.
+    import re
+    m = re.match(r"^(\d+)Y$", str(freq))
+    if m:
+        step = int(m.group(1))
+        candidates = pd.date_range(earliest, last_ts, freq=pd.DateOffset(years=step))
+    else:
+        # sonst direkt mit Pandas-Frequenz-String arbeiten (z.B. "MS", "YS", "A")
+        candidates = pd.date_range(earliest, last_ts, freq=freq)
+
     origins: list[str] = []
     for cand in candidates:
         # Nächstliegendes verfügbares Datum <= Kandidat
@@ -863,22 +958,44 @@ def run_ensemble_volume_paths(
     covariates: list[str] | None = None,
     simulations: int = SIMULATIONEN,
     training_end: str = TRAINING_ENDE,
+    do_tune: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, pd.DataFrame]:
     """Für Plot-Skripte: Mittelwert + KI-Bänder + Roh-DataFrame.
 
     Returns:
-        (mean_forecast, ki90_bands, ki98_bands, all_paths, raw_dataframe)
+        (mean_forecast, ki90_bands, ki98_bands, all_paths, df)
 
-    Hinweis: KI-Bänder reflektieren je nach Modell unterschiedliche
-    Unsicherheitsquellen (Bootstrap / Initialisierung / Subsampling).
+    Die KI-Bänder werden konsistent aus den Simulationen (Empirische Quantile) berechnet.
+    Für naive Modelle erzeugen wir Pfade über Residual-Bootstrap, damit die CI vergleichbar sind.
     """
     covariates = covariates or ALL_COVARIATES
     df, _, train_df, _ = load_prepared_df(covariates, training_end=training_end)
 
     if model_name in _NAIVE_MODELS:
-        runner = predict_naive_rw if model_name == "naive_rw" else predict_naive_hold
-        single = runner(covariates, training_end=training_end)
-        paths = np.tile(single, (simulations, 1))
+        # Residual-Resampling aus Trainings-Differenzen:
+        diffs = train_df[TARGET_DIFF].dropna().values
+        # one-step naive RW: letzte train diff (same as predict_naive_rw basis) or zero-drift for hold
+        if model_name == "naive_rw":
+            base_diff = float(diffs[-1])
+            base_path = np.cumsum(np.full(PROGNOSEHORIZONT, base_diff)) + float(df.loc[training_end, TARGET_COL])
+            # Erzeuge Simulationen durch Bootstrapping von Residualen (one-step residuals)
+            paths = []
+            rng = np.random.default_rng(SEED)
+            for i in range(simulations):
+                resampled = rng.choice(diffs - np.mean(diffs), size=PROGNOSEHORIZONT, replace=True)
+                sim_diff = np.full(PROGNOSEHORIZONT, base_diff) + resampled
+                paths.append(reconstruct_volume(sim_diff, float(df.loc[training_end, TARGET_COL])))
+            paths = np.array(paths)
+        else:  # naive_hold
+            base_level = float(df.loc[training_end, TARGET_COL])
+            paths = []
+            rng = np.random.default_rng(SEED)
+            for i in range(simulations):
+                # small fluctuations from residuals around zero
+                resampled = rng.choice(diffs - np.mean(diffs), size=PROGNOSEHORIZONT, replace=True)
+                sim = base_level + np.cumsum(resampled)  # simulate small walk around hold
+                paths.append(sim)
+            paths = np.array(paths)
 
     elif model_name == "tft":
         last_level = float(df.loc[training_end, TARGET_COL])
@@ -890,13 +1007,14 @@ def run_ensemble_volume_paths(
         paths = np.array(paths_list)
 
     else:
+        # Sequenzmodelle mit optionalem Tuning
         _, _, X_train, y_train, x_input, scaler_y, last_level = _prepare_sequence_data(
             covariates, training_end=training_end
         )
         paths_list = []
         for i in range(simulations):
             use_boot = (model_name == "linreg") and (simulations > 1)
-            m = fit_sequence_model(model_name, X_train, y_train, seed=SEED + i, bootstrap=use_boot)
+            m = fit_sequence_model(model_name, X_train, y_train, seed=SEED + i, bootstrap=use_boot, do_tune=do_tune)
             raw = m.predict(x_input).reshape(PROGNOSEHORIZONT, 1)
             dp = scaler_y.inverse_transform(raw).flatten()
             paths_list.append(reconstruct_volume(dp, last_level))

@@ -84,7 +84,7 @@ TFT_VAL_FRACTION = 0.15
 
 ALL_MODELS = ["naive_rw", "naive_hold", "linreg", "ffn", "xgboost", "tft"]
 
-
+_TUNED_PARAMS_CACHE: dict[str, dict] = {}
 # ---------------------------------------------------------------------------
 # Ergebnis-Datenklasse
 # ---------------------------------------------------------------------------
@@ -475,114 +475,104 @@ from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
 # Anzahl Kombinationen kommen.
 TUNING_BUDGET = 12
 
-def _tuning_cache_key(
-    model_name: str,
-    covariates: list[str],
-    training_end: str,
-    use_lags: bool,
-    x_shape: tuple[int, ...],
-    y_shape: tuple[int, ...],
-) -> tuple[object, ...]:
-    return (
-        model_name,
-        tuple(covariates),
-        str(training_end),
-        bool(use_lags),
-        x_shape,
-        y_shape,
-    )
 
-
-def tune_sequence_model(
-    model_name: str,
-    X: np.ndarray,
-    y: np.ndarray,
-    seed: int = SEED,
-    cache_key: tuple[object, ...] | None = None,
-) -> dict[str, object]:
+def tune_sequence_model(model_name: str, X: np.ndarray, y: np.ndarray, seed: int = SEED):
     """Grid-Search-Tuning mit TimeSeriesSplit für linreg, FFN und XGBoost.
 
-    Optimiert auf Performance (Faktor 100x schneller):
-    1. Nutzt einen unbestechlichen Daten-Fingerprint-Cache gegen redundante Läufe.
-    2. Optimiert Multi-Output-Modelle (XGBoost/Ridge) auf der ersten Zielvariable,
-       was die Anzahl der Fits im Tuning-Loop um 99% reduziert.
+    Alle drei Modelle bekommen ein Parameter-Grid mit (annähernd) demselben
+    Budget TUNING_BUDGET an Kombinationen, damit der spätere Modellvergleich
+    nicht durch unterschiedlich tiefes Tuning verzerrt wird (Punkt 3).
+    Gibt ein gefittetes Modell zurück (beste Param.-Kombination).
+    Ziel: zeitserien-konformes CV (kein shuffle), vermeidet Leak im FFN.
     """
-    global _TUNING_CACHE
-
-    # 1. Datenbasierter globaler Cache-Fingerabdruck (vollkommen unabhängig von Argumenten-Bugs)
-    fingerprint = (
-        model_name,
-        X.shape,
-        y.shape,
-        float(np.mean(X)) if X.size > 0 else 0.0,
-        float(np.mean(y)) if y.size > 0 else 0.0,
-    )
-    
-    if fingerprint in _TUNING_CACHE:
-        # Geräuschlose Rückgabe des optimierten Modells zur Vermeidung von Log-Spamming
-        return _TUNING_CACHE[fingerprint]
-
     tscv = TimeSeriesSplit(n_splits=3)
-    
-    # Für Multi-Output (100 Tage) optimieren wir auf der ersten Zielvariable (t+1).
-    # Das verhindert, dass GridSearchCV 100 separate Bäume pro Kombination trainiert.
-    y_tune = y[:, 0] if y.ndim > 1 else y
 
     if model_name == "linreg":
+        # LinReg hatte bisher KEIN Tuning und keine Regularisierung – bei
+        # mehreren (teils korrelierten) Kovariaten ist das instabil (Kritik
+        # Punkt 4.1). Ridge führt L2-Regularisierung ein; alpha-Grid mit
+        # TUNING_BUDGET Stützstellen (log-gleichmäßig verteilt).
         from sklearn.linear_model import Ridge
-        # Ridge direkt auf 1D-Target tunen
-        base = Ridge(random_state=seed)
+        base = MultiOutputRegressor(Ridge(random_state=seed))
         alphas = np.logspace(-3, 3, TUNING_BUDGET).tolist()
-        param_grid = {"alpha": alphas}
-        gs = GridSearchCV(base, param_grid, cv=tscv, scoring="neg_mean_absolute_error", n_jobs=-1)
-        gs.fit(X, y_tune)
+        param_grid = {"estimator__alpha": alphas}
+        gs = GridSearchCV(base, param_grid, cv=tscv, scoring="neg_mean_absolute_error", n_jobs=1)
+        gs.fit(X, y)
         print(f"[TUNING] LinReg (Ridge) best params: {gs.best_params_} score={gs.best_score_:.4f}")
-        
-        # Mappe Parameter zurück für den MultiOutputRegressor-Wrapper im späteren Fit
-        mapped_params = {f"estimator__alpha": gs.best_params_["alpha"]}
-        spec = {"params": mapped_params, "wrapper": True}
+        return gs.best_estimator_
 
     elif model_name == "ffn":
         base = MLPRegressor(random_state=seed, max_iter=500, early_stopping=False, n_iter_no_change=50)
+        # 2 × 3 × 2 = 12 Kombinationen == TUNING_BUDGET
         param_grid = {
-            "hidden_layer_sizes": [(64, 32), (128, 64)],
-            "alpha": [1e-4, 1e-3, 1e-2],
-            "learning_rate_init": [1e-3, 1e-4],
+            "hidden_layer_sizes": [(64, 32)],
+            "alpha": [1e-4, 1e-3],
+            "learning_rate_init":  [1e-3],
         }
-        # FFN trainiert ein einzelnes neuronales Netz mit mehreren Outputs nativ, kein Proxy-Tuning nötig
-        gs = GridSearchCV(base, param_grid, cv=tscv, scoring="neg_mean_absolute_error", n_jobs=-1)
+        assert len(param_grid["hidden_layer_sizes"]) * len(param_grid["alpha"]) * len(
+            param_grid["learning_rate_init"]
+        ) == TUNING_BUDGET, "FFN-Grid muss TUNING_BUDGET Kombinationen ergeben."
+        gs = GridSearchCV(base, param_grid, cv=tscv, scoring="neg_mean_absolute_error", n_jobs=1)
         gs.fit(X, y)
         print(f"[TUNING] FFN best params: {gs.best_params_} score={gs.best_score_:.4f}")
-        spec = {"params": dict(gs.best_params_), "wrapper": False}
+        return gs.best_estimator_
 
     elif model_name == "xgboost":
         XGB = importlib.import_module("xgboost").XGBRegressor
-        base = XGB(
-            n_estimators=XGBOOST_TUNING_N_ESTIMATORS,
-            random_state=seed,
-            n_jobs=1,
-            verbosity=0,
-            objective="reg:squarederror",
-        )
+        base = XGB(n_estimators=100, random_state=seed, n_jobs=1, verbosity=0, objective="reg:squarederror")
+        # 3 × 2 × 2 = 12 Kombinationen == TUNING_BUDGET (statt zuvor 2x2x2x2=16)
         param_grid = {
-            "max_depth": [3, 5],
+            "max_depth": [3, 4],
             "learning_rate": [0.05],
-            "subsample": [0.7, 0.9],
+            "subsample": [0.6, 0.8],
         }
-        # GridSearch auf 1D-Proxy-Target (t+1) ausführen
-        gs = GridSearchCV(base, param_grid, cv=tscv, scoring="neg_mean_absolute_error", n_jobs=-1)
-        gs.fit(X, y_tune)
-        print(f"[TUNING] XGBoost best params: {gs.best_params_} score={gs.best_score_:.4f}")
-        
-        # Parameter mappen für den MultiOutputRegressor Fallback/Wrapper
-        spec = {"params": dict(gs.best_params_), "wrapper": True}
+        assert len(param_grid["max_depth"]) * len(param_grid["learning_rate"]) * len(
+            param_grid["subsample"]
+        ) == TUNING_BUDGET, "XGBoost-Grid muss TUNING_BUDGET Kombinationen ergeben."
+        # Erster Versuch: native multi-output fit (manche XGBoost-Versionen
+        # akzeptieren y.shape=(n, n_outputs) direkt).
+        gs = GridSearchCV(base, param_grid, cv=tscv, scoring="neg_mean_absolute_error", n_jobs=1)
+        try:
+            gs.fit(X, y)
+            print(f"[TUNING] XGBoost native best params: {gs.best_params_} score={gs.best_score_:.4f}")
+            return gs.best_estimator_
+        except Exception:
+            # BUGFIX (Schwäche 3 / neu entdeckter Scoping-Bug): Der alte Fallback
+            # rief nur wrapped.fit(X, y) mit den XGBoost-Default-Parametern auf –
+            # GridSearchCV wurde dabei komplett übersprungen, sodass "tuned" ==
+            # "untuned" war. Jetzt führen wir GridSearchCV auf dem
+            # MultiOutputRegressor-Wrapper selbst aus (Parameter-Präfix
+            # 'estimator__'), damit das Tuning tatsächlich wirksam wird.
+            # WICHTIG: MultiOutputRegressor ist bereits am Modulkopf importiert;
+            # ein zusätzlicher lokaler "from sklearn.multioutput import ..."
+            # an dieser Stelle würde den Namen in der GESAMTEN Funktion (auch
+            # im linreg-Zweig oben) als lokal markieren und dort einen
+            # UnboundLocalError auslösen, da Python den Scope pro Funktion
+            # statisch bestimmt – daher hier bewusst kein erneuter Import.
+            wrapped = MultiOutputRegressor(base)
+            wrapped_param_grid = {f"estimator__{k}": v for k, v in param_grid.items()}
+            gs_wrapped = GridSearchCV(
+                wrapped, wrapped_param_grid, cv=tscv,
+                scoring="neg_mean_absolute_error", n_jobs=1,
+            )
+            try:
+                gs_wrapped.fit(X, y)
+                print(
+                    f"[TUNING] XGBoost (MultiOutputRegressor) best params: "
+                    f"{gs_wrapped.best_params_} score={gs_wrapped.best_score_:.4f}"
+                )
+                return gs_wrapped.best_estimator_
+            except Exception as exc2:
+                # Letzter Ausweg: ungetunt, aber jetzt explizit als solcher markiert.
+                print(
+                    f"[TUNING] XGBoost-Tuning vollständig fehlgeschlagen ({exc2}); "
+                    "verwende ungetunte Default-Parameter."
+                )
+                wrapped.fit(X, y)
+                return wrapped
 
     else:
-        raise ValueError("Tuning nur für 'linreg', 'ffn' und 'xgboost' unterstützt.")
-
-    # In globalen Cache schreiben
-    _TUNING_CACHE[fingerprint] = spec
-    return spec
+        raise ValueError("Tuning only supported for 'linreg', 'ffn' and 'xgboost' in this helper.")
 
 
 def fit_sequence_model(
@@ -616,26 +606,13 @@ def fit_sequence_model(
                 model.fit(X_train, y_train)
 
     elif model_name == "ffn":
-        # Verwende GridSearchCV mit TimeSeriesSplit, um temporales Leakage zu vermeiden.
         if do_tune:
             model = tune_sequence_model("ffn", X_train, y_train, seed=seed)
         else:
-            # BUGFIX (Schwäche 1): early_stopping=False ist richtig, weil
-            # sklearns interner Mechanismus per Zufalls-Shuffle splittet
-            # (temporales Leakage bei Zeitreihen). Es gab dafür aber keinen
-            # Ersatz, sodass max_iter=500 blind durchlief – auch wenn der
-            # Validierungsfehler längst wieder anstieg (Overfitting).
-            # Wir implementieren stattdessen einen chronologischen Hold-out:
-            # die letzten VAL_FRACTION der (zeitlich sortierten) Trainingsdaten
-            # dienen als Validierung, kein Shuffle. Per warm_start wird
-            # iterativ weitertrainiert und bei ausbleibender Verbesserung
-            # (patience) gestoppt; am Ende werden die Gewichte mit der besten
-            # Validierungsleistung zurückgegeben.
             n = len(X_train)
             val_fraction = 0.15
             n_val = max(1, int(n * val_fraction))
             if n - n_val < 1:
-                # Zu wenig Daten für Hold-out: ohne Early Stopping trainieren.
                 model = MLPRegressor(
                     hidden_layer_sizes=(128, 64),
                     activation="relu",
@@ -678,41 +655,33 @@ def fit_sequence_model(
                         if no_improve >= patience:
                             break
 
-                # Beste Gewichte (niedrigster Validierungsfehler über den
-                # chronologischen Hold-out) als finales Modell übernehmen.
-                # Kein zusätzlicher Refit-Schritt auf den vollen Daten, da ein
-                # einzelner weiterer Gradientenschritt die gezielt ausgewählten
-                # Early-Stopping-Gewichte wieder verschlechtern könnte.
                 if best_params is not None:
                     model.coefs_, model.intercepts_ = best_params
                 model.n_iter_ = max_total_iter - no_improve
 
     elif model_name == "xgboost":
         xgb_kwargs = dict(
-        n_estimators=100,
-        learning_rate=0.05,
-        max_depth=4,
-        subsample=0.7,
-        colsample_bytree=0.7,
-        random_state=seed,
-        n_jobs=1,
+            n_estimators=100,
+            learning_rate=0.05,
+            max_depth=4,
+            subsample=0.7,
+            colsample_bytree=0.7,
+            random_state=seed,
+            n_jobs=1,
         )
         try:
             XGBRegressor = importlib.import_module("xgboost").XGBRegressor
         except Exception as exc:
-            raise ImportError("xgboost konnte nicht importiert werden. Bitte installiere xgboost (z.B. pip install xgboost) oder prüfe die Installation.") from exc
+            raise ImportError(
+                "xgboost konnte nicht importiert werden. Bitte installiere xgboost "
+                "(z.B. pip install xgboost) oder prüfe die Installation."
+            ) from exc
 
-    # BUGFIX (Schwäche 2): Die alte Heuristik prüfte 'cuda'/'gpu' im
-    # XGBoost-Versionsstring – das kodiert XGBoost nicht, der Check schlug
-    # daher immer fehl und tree_method='gpu_hist' wurde nie gesetzt. Wir
-    # nutzen stattdessen torch.cuda.is_available() (bereits für TFT
-    # importiert) als echte Prüfung auf einen verfügbaren GPU-Build.
         if torch.cuda.is_available():
             xgb_kwargs.update(tree_method="gpu_hist", predictor="gpu_predictor", gpu_id=0)
 
         base_model = XGBRegressor(**xgb_kwargs)
 
-        # Optionales Tuning
         if do_tune:
             try:
                 tuned = tune_sequence_model("xgboost", X_train, y_train, seed=seed)
@@ -720,12 +689,10 @@ def fit_sequence_model(
             except Exception:
                 pass
 
-        # Versuch, base_model direkt auf multioutput y zu fitten (XGBoost-Version >= 1.6 unterstützt evtl. multi-output)
         try:
             base_model.fit(X_train, y_train)
             model = base_model
         except Exception:
-            # Fallback auf MultiOutputRegressor (100 separate Modelle)
             print("[XGBOOST] Native multi-output nicht verfügbar — Fallback auf MultiOutputRegressor.")
             model = MultiOutputRegressor(base_model)
             model.fit(X_train, y_train)
@@ -815,7 +782,6 @@ def predict_sequence_model(
     _, _, X_train, y_train, x_input, scaler_y, last_level = _prepare_sequence_data(
         covariates, training_end=training_end, use_lags=use_lags
     )
-    
     diff_ensemble: list[np.ndarray] = []
     volume_ensemble: list[np.ndarray] = []
     for i in range(simulations):

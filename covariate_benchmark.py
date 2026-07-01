@@ -94,6 +94,58 @@ def parse_args() -> argparse.Namespace:
         default="covariate_benchmark_rolling.csv",
         help="CSV-Ausgabe für Rolling-Ergebnisse",
     )
+    # Punkt 1: Lags für Kovariaten
+    parser.add_argument(
+        "--lags",
+        action="store_true",
+        help=(
+            "Verzögerte Kovariaten-Features (t-1, t-5, t-20 Handelstage) zusätzlich "
+            "zu den Originalwerten verwenden (siehe common.LAG_STEPS). Nur für "
+            "Sequenzmodelle wirksam (linreg/ffn/xgboost)."
+        ),
+    )
+    # Punkt 3: Einheitliches Tuning-Budget
+    parser.add_argument(
+        "--tune",
+        action="store_true",
+        help=(
+            "GridSearchCV mit einheitlichem Parameter-Budget (TUNING_BUDGET Kombinationen) "
+            "für ALLE Sequenzmodelle aktivieren (linreg/ffn/xgboost), statt ungetunter "
+            "Defaults bzw. nur teilweisem Tuning."
+        ),
+    )
+    # Punkt 5: Zinsregime als Split-Kriterium (nur sinnvoll mit --rolling)
+    parser.add_argument(
+        "--regime",
+        nargs="?",
+        const="€STR",
+        default=None,
+        help=(
+            "Zinsregime pro Rolling-Origin annotieren (Spalte 'Regime'), basierend auf "
+            "dem Wert der angegebenen Spalte (Standard: €STR) am jeweiligen Origin-Datum. "
+            "Nur mit --rolling wirksam. Siehe common.assign_interest_regime/REGIME_BINS."
+        ),
+    )
+    # Punkt 6: TFT-Baseline (alte, unterkonfigurierte Variante ohne known_reals)
+    parser.add_argument(
+        "--tft-baseline",
+        action="store_true",
+        help=(
+            "Falls TFT in --modelle enthalten ist: die ursprüngliche Baseline-Variante "
+            "ohne time_varying_known_reals verwenden (known_reals=[]), statt der "
+            "Standard-Variante mit echten Kalender-known_reals. Nützlich, um den Effekt "
+            "der known_reals im Paper explizit zu zeigen."
+        ),
+    )
+    # Punkt 4: Diebold-Mariano-Test zwischen den besten Modellen (nur mit --rolling)
+    parser.add_argument(
+        "--dm-test",
+        action="store_true",
+        help=(
+            "Nach --rolling: Diebold-Mariano-Test zwischen den paarweise besten "
+            "Modell×Label-Kombinationen durchführen (Signifikanz der Rangfolge prüfen)."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -160,7 +212,10 @@ def run_single_benchmark(args: argparse.Namespace) -> pd.DataFrame:
         f"\nEinzelpunkt-Benchmark: {len(args.modelle)} Modell(e) × {len(combos)} "
         f"Kovariaten-Sets = {len(tasks)} Läufe"
     )
-    print(f"Modus: {args.kovariaten_modus} | Simulationen: {args.simulationen}")
+    print(
+        f"Modus: {args.kovariaten_modus} | Simulationen: {args.simulationen} | "
+        f"Lags: {args.lags} | Tuning: {args.tune}"
+    )
     print(
         "\nHinweis: Ergebnisse basieren auf einem einzelnen Testfenster. "
         "Für robuste Aussagen --rolling verwenden.\n"
@@ -175,6 +230,9 @@ def run_single_benchmark(args: argparse.Namespace) -> pd.DataFrame:
                     covariates=covariates,
                     covariate_label=label,
                     simulations=args.simulationen,
+                    use_lags=args.lags,
+                    do_tune=args.tune,
+                    use_calendar_known_reals=not args.tft_baseline,
                 )
             )
         except Exception as exc:
@@ -209,6 +267,8 @@ def run_rolling_benchmark(args: argparse.Namespace) -> pd.DataFrame:
         f"× {len(origins)} Origins = {len(tasks) * len(origins)} Läufe"
     )
     print(f"Origins ({args.rolling_freq}): {origins[0]} … {origins[-1]}")
+    if args.regime:
+        print(f"Zinsregime-Annotation aktiv (Spalte: {args.regime!r})")
 
     all_rows: list[pd.DataFrame] = []
     for model_name, covariates, label in tqdm(tasks, desc="Rolling-Benchmark"):
@@ -219,6 +279,9 @@ def run_rolling_benchmark(args: argparse.Namespace) -> pd.DataFrame:
                 covariate_label=label,
                 simulations=args.simulationen,
                 origins=origins,
+                use_lags=args.lags,
+                do_tune=args.tune,
+                regime_col=args.regime,
             )
             all_rows.append(df_roll)
         except Exception as exc:
@@ -228,13 +291,65 @@ def run_rolling_benchmark(args: argparse.Namespace) -> pd.DataFrame:
         raise SystemExit("Keine Rolling-Ergebnisse.")
 
     df_full = pd.concat(all_rows, ignore_index=True)
-    df_full.to_csv(args.rolling_output, index=False, encoding="utf-8-sig")
-    print(f"\nRolling-CSV gespeichert: {args.rolling_output}")
+
+    # Die rohen Vorhersage-/Wahrwerte-Arrays (diff_pred, volume_pred, true_diff,
+    # true_volume) sind für Diebold-Mariano (--dm-test) bzw. Top-5-CIs (Punkt 2)
+    # gedacht, aber nicht CSV-tauglich (NumPy-Arrays je Zelle). Für den
+    # CSV-Export entfernen wir sie; df_full (mit Arrays) bleibt im Speicher für
+    # nachgelagerte Analysen (z.B. --dm-test) erhalten.
+    array_cols = [c for c in ["diff_pred", "volume_pred", "true_diff", "true_volume"] if c in df_full.columns]
+    df_csv = df_full.drop(columns=array_cols)
+    df_csv.to_csv(args.rolling_output, index=False, encoding="utf-8-sig")
+    print(f"\nRolling-CSV gespeichert: {args.rolling_output} (ohne Rohdaten-Arrays)")
 
     print("\n--- Aggregierte Rolling-Metriken (Mittelwert ± Std) ---")
-    agg = tc.aggregate_rolling_results(df_full)
+    agg = tc.aggregate_rolling_results(df_csv)
     print(agg.to_string())
     return df_full
+
+
+def run_dm_test_report(df_roll: pd.DataFrame) -> None:
+    """Punkt 4: Diebold-Mariano-Test zwischen den paarweise besten
+    Modell×Label-Kombinationen (nach mittlerem MAE_Volumen über die Origins).
+
+    Reduziert auf die Top-3 Kombinationen, da paarweise Tests bei vielen
+    Kombinationen schnell zu multiplem Testen führen (dasselbe Problem wie
+    Kritik 5.1, nur auf der Signifikanztest-Ebene) – hier explizit auf
+    wenige, vorab inhaltlich interessante Vergleiche begrenzt.
+    """
+    ranking = (
+        df_roll.groupby(["Modell", "Label"])["MAE_Volumen"]
+        .mean()
+        .sort_values()
+        .reset_index()
+    )
+    if len(ranking) < 2:
+        print("\n[DM-Test] Zu wenige Modell×Label-Kombinationen für einen Vergleich.")
+        return
+
+    top_n = ranking.head(3)
+    print("\n--- Diebold-Mariano-Test: paarweiser Vergleich der Top-Kombinationen ---")
+    print(
+        "Hinweis: H0 = beide Modelle haben gleiche Prognosegüte. p < 0.05 spricht "
+        "gegen H0 (signifikanter Unterschied). Mehrfachvergleiche -> Bonferroni-"
+        "Korrektur in Betracht ziehen, falls mehr als ein Paar getestet wird.\n"
+    )
+    rows = top_n.to_dict("records")
+    for i in range(len(rows)):
+        for j in range(i + 1, len(rows)):
+            a, b = rows[i], rows[j]
+            sub_a = df_roll[(df_roll["Modell"] == a["Modell"]) & (df_roll["Label"] == a["Label"])]
+            sub_b = df_roll[(df_roll["Modell"] == b["Modell"]) & (df_roll["Label"] == b["Label"])]
+            try:
+                result = tc.compare_models_dm(sub_a, sub_b, target="volume", loss="mse")
+                sig = "***" if result["p_value"] < 0.05 else "(n.s.)"
+                print(
+                    f"{a['Modell']}/{a['Label']} (MAE={a['MAE_Volumen']:.4f}) vs. "
+                    f"{b['Modell']}/{b['Label']} (MAE={b['MAE_Volumen']:.4f}): "
+                    f"DM={result['dm_stat']:.3f}, p={result['p_value']:.4f} {sig}"
+                )
+            except Exception as exc:
+                print(f"[DM-Test] Fehler bei {a['Modell']}/{a['Label']} vs. {b['Modell']}/{b['Label']}: {exc}")
 
 
 def main() -> None:
@@ -246,10 +361,24 @@ def main() -> None:
     if args.plot:
         save_benchmark_plot(df, args.plot_file)
 
+    # --- Rolling-Origin-Evaluation (optional) ---
+    # Vor den Visualisierungen ausgeführt, damit save_top5_table (Punkt 2)
+    # die Rolling-Ergebnisse für Konfidenzintervalle nutzen kann.
+    df_roll_full: pd.DataFrame | None = None
+    if args.rolling:
+        df_roll_full = run_rolling_benchmark(args)
+        prefix_roll = args.rolling_output.replace(".csv", "")
+        save_rolling_plot(df_roll_full, f"{prefix_roll}_timeline.png")
+        # FIX: Rolling-Summary (Boxplots der Rolling-Verteilung) speichern
+        save_rolling_summary(df_roll_full, f"{prefix_roll}_summary.png")
+
+        if args.dm_test:
+            run_dm_test_report(df_roll_full)
+
     if args.viz:
         prefix = args.output.replace(".csv", "")
         if args.viz == "all":
-            save_all_visualizations(df, prefix=prefix)
+            save_all_visualizations(df, prefix=prefix, rolling_df=df_roll_full)
         elif args.viz == "heatmap":
             save_heatmap(df, f"{prefix}_heatmap.png")
         elif args.viz == "box":
@@ -257,15 +386,7 @@ def main() -> None:
         elif args.viz == "scatter":
             save_scatter(df, f"{prefix}_scatter_n_covariates.png")
         elif args.viz == "top5":
-            save_top5_table(df, f"{prefix}_top5.csv")
-
-    # --- Rolling-Origin-Evaluation (optional) ---
-    if args.rolling:
-        df_roll = run_rolling_benchmark(args)
-        prefix_roll = args.rolling_output.replace(".csv", "")
-        save_rolling_plot(df_roll, f"{prefix_roll}_timeline.png")
-        # FIX: Rolling-Summary (Boxplots der Rolling-Verteilung) speichern
-        save_rolling_summary(df_roll, f"{prefix_roll}_summary.png")
+            save_top5_table(df, f"{prefix}_top5.csv", rolling_df=df_roll_full)
 
 
 if __name__ == "__main__":

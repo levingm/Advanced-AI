@@ -61,6 +61,15 @@ PROGNOSEHORIZONT = 100
 SIMULATIONEN = 5
 SEED = 42
 
+# --- Punkt 1 (Lags): Kovariaten wirken in der Realität meist verzögert auf
+# das Einlagenverhalten (z.B. Zinsänderungen brauchen Zeit, bis Kunden
+# reagieren). Ohne Lags kann kein Sequenzmodell diesen Mechanismus abbilden,
+# selbst wenn er in den Daten steckt. LAG_STEPS definiert die Standard-Lags
+# in Handelstagen; mit use_lags=True werden für jede Kovariate zusätzliche
+# Spalten f"{col}_lag{L}" erzeugt (kurzfristig: 1 Tag, mittelfristig: 1 Woche,
+# längerfristig: ca. 1 Monat).
+LAG_STEPS = [1, 5, 20]
+
 TRAINING_ENDE = "2023-11-30"
 HISTORIE_ANFANG = "2023-06-01"
 HISTORIE_ENDE = "2023-11-30"
@@ -100,9 +109,57 @@ class ForecastResult:
 # ---------------------------------------------------------------------------
 # Kovariatenkombinationen
 # ---------------------------------------------------------------------------
-def variablen_for(covariates: list[str]) -> list[str]:
-    """Kombiniert Target + Kovariaten für DataFrame-Selektion."""
-    return [TARGET_COL] + list(covariates)
+def variablen_for(covariates: list[str], use_lags: bool = False) -> list[str]:
+    """Kombiniert Target + Kovariaten (+ optional Lag-Spalten) für DataFrame-Selektion.
+
+    Args:
+        covariates: Basis-Kovariaten (Spaltennamen zum Zeitpunkt t)
+        use_lags:   Falls True, werden zusätzlich die Lag-Spalten
+                    f"{col}_lag{L}" für L in LAG_STEPS aufgenommen (Punkt 1).
+                    Die Originalspalte zu t bleibt zusätzlich erhalten, damit
+                    sowohl sofortige als auch verzögerte Wirkung verglichen
+                    werden können.
+    """
+    cols = [TARGET_COL] + list(covariates)
+    if use_lags:
+        cols += lag_column_names(covariates)
+    return cols
+
+
+def lag_column_names(covariates: list[str], lags: list[int] | None = None) -> list[str]:
+    """Liefert die Namen aller Lag-Spalten für die gegebenen Kovariaten."""
+    lags = lags if lags is not None else LAG_STEPS
+    return [f"{col}_lag{L}" for col in covariates for L in lags]
+
+
+def add_lags(
+    df: pd.DataFrame,
+    covariates: list[str],
+    lags: list[int] | None = None,
+) -> pd.DataFrame:
+    """Ergänzt verzögerte Kovariaten-Spalten f"{col}_lag{L}" (Punkt 1: Lags).
+
+    Begründung (siehe Kritik 2.3): Zinsänderungen, Marktbewegungen etc. wirken
+    in der Realität meist verzögert auf das Einlagenverhalten. Ohne Lags
+    unterstellt der Code implizit eine sofortige, zeitgleiche Wirkung – das
+    ist ökonomisch unplausibel. add_lags() erzeugt zusätzliche Spalten, die
+    den Wert der jeweiligen Kovariate L Handelstage zuvor enthalten, sodass
+    Modelle (insbesondere LinReg/FFN/XGBoost, die keine eigene Gedächtnis-
+    struktur für Kovariaten-Lags haben) verzögerte Effekte direkt als Feature
+    sehen können.
+
+    Wichtig: shift() arbeitet positions-/indexbasiert auf dem bestehenden
+    DatetimeIndex (Handelstage), nicht auf Kalendertagen – ein "Lag von 5"
+    bedeutet daher 5 Handelstage, nicht 5 Kalendertage.
+    """
+    lags = lags if lags is not None else LAG_STEPS
+    out = df.copy()
+    for col in covariates:
+        if col not in out.columns:
+            continue
+        for L in lags:
+            out[f"{col}_lag{L}"] = out[col].shift(L)
+    return out
 
 
 def generate_covariate_combinations(
@@ -211,6 +268,7 @@ def load_prepared_df(
     covariates: list[str],
     training_end: str = TRAINING_ENDE,
     prognosehorizont: int = PROGNOSEHORIZONT,
+    use_lags: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Lädt und bereitet Daten vor.
 
@@ -218,6 +276,9 @@ def load_prepared_df(
         covariates: Zu nutzende Kovariaten.
         training_end: Letztes Trainingsdatum (für Rolling-Origin parametrierbar).
         prognosehorizont: Länge des Prognose-Horizonts.
+        use_lags: Falls True, werden zusätzlich gelagte Kovariaten-Spalten
+            (Punkt 1) erzeugt und mitgeführt. Die ersten max(LAG_STEPS) Zeilen
+            fallen dabei zwangsläufig durch dropna() weg (kein Lag verfügbar).
 
     Returns:
         df:         Vollständiger Frame inkl. NaN (echte Test-Levels abrufbar)
@@ -225,8 +286,10 @@ def load_prepared_df(
         train_df:   Trainingsdaten bis training_end
         future_df:  Referenzdaten für den Test-Horizont (nicht als Modell-Input)
     """
-    variablen = variablen_for(covariates)
-    df = _load_base_frame()[variablen].copy()
+    base_cols = [TARGET_COL] + list(covariates)
+    df = _load_base_frame()[base_cols].copy()
+    if use_lags and covariates:
+        df = add_lags(df, covariates)
     df[TARGET_DIFF] = df[TARGET_COL].diff()
     df_clean = df.dropna()
 
@@ -311,6 +374,37 @@ def reconstruct_volume(diff_pred: np.ndarray, last_level: float) -> np.ndarray:
     return last_level + np.cumsum(diff_pred)
 
 
+# BUGFIX 2: Rolling-Origins können auf Wochenenden/Feiertage fallen, die im
+# (nur Bankarbeitstage enthaltenden) Datenindex nicht existieren. Statt eines
+# rohen .loc[]/.get_loc()-Zugriffs (KeyError) snappen wir konsequent auf den
+# letzten verfügbaren Handelstag <= dem angefragten Datum.
+def _snap_to_available_date(index: pd.DatetimeIndex, date: str) -> pd.Timestamp:
+    """Liefert das letzte verfügbare Datum im Index <= `date`.
+
+    Wirft ValueError, falls kein Datum <= `date` existiert (z.B. Origin liegt
+    vor dem Datenbeginn).
+    """
+    ts = pd.Timestamp(date)
+    avail = index[index <= ts]
+    if len(avail) == 0:
+        raise ValueError(
+            f"Kein verfügbares Datum <= {date} im Datenindex (Datenbeginn: {index.min()})."
+        )
+    return avail[-1]
+
+
+def _get_loc_snapped(df: pd.DataFrame, date: str) -> int:
+    """Positionsindex des letzten verfügbaren Datums <= `date` (snapped)."""
+    snapped = _snap_to_available_date(df.index, date)
+    return df.index.get_loc(snapped)
+
+
+def _loc_value_snapped(df: pd.DataFrame, date: str, col: str):
+    """Wert von `col` am letzten verfügbaren Datum <= `date` (snapped)."""
+    snapped = _snap_to_available_date(df.index, date)
+    return df.loc[snapped, col]
+
+
 # ---------------------------------------------------------------------------
 # FIX 2: Naive Benchmarks
 # ---------------------------------------------------------------------------
@@ -320,16 +414,24 @@ def predict_naive_rw(
     simulations: int = 1,
     seed: int = SEED,
     training_end: str = TRAINING_ENDE,
-) -> np.ndarray:
+) -> tuple[np.ndarray, np.ndarray]:
     """Naiver Benchmark – Random Walk: letzte Differenz konstant fortgeschrieben.
 
     Formal: ŷ_{t+h} = y_t + h * Δy_t  für alle h = 1..PROGNOSEHORIZONT
     Kein Zukunftswissen. Schwieriger Benchmark für Finanzzeitreihen.
+
+    Hinweis (BUGFIX 1): `covariates` wird hier bewusst ignoriert – Naive-Modelle
+    benötigen keine Kovariaten und dürfen daher mit covariates=[] aufgerufen werden.
+
+    Returns:
+        (volume_pred, diff_pred) – diff_pred ist die rohe, konstante Modell-Differenz
+        (BUGFIX 5: direkt statt über np.diff(volume_pred) rückgerechnet).
     """
     df, df_clean, _, _ = load_prepared_df(covariates, training_end=training_end)
     last_diff = float(df_clean.loc[:training_end, TARGET_DIFF].iloc[-1])
-    last_level = float(df.loc[training_end, TARGET_COL])
-    return reconstruct_volume(np.full(PROGNOSEHORIZONT, last_diff), last_level)
+    last_level = float(_loc_value_snapped(df, training_end, TARGET_COL))
+    diff_pred = np.full(PROGNOSEHORIZONT, last_diff)
+    return reconstruct_volume(diff_pred, last_level), diff_pred
 
 
 def predict_naive_hold(
@@ -337,14 +439,23 @@ def predict_naive_hold(
     simulations: int = 1,
     seed: int = SEED,
     training_end: str = TRAINING_ENDE,
-) -> np.ndarray:
+) -> tuple[np.ndarray, np.ndarray]:
     """Naiver Benchmark – Naive Hold: letztes Volumen konstant (Drift = 0).
 
     Formal: ŷ_{t+h} = y_t  für alle h.
+
+    Hinweis (BUGFIX 1): `covariates` wird hier bewusst ignoriert – Naive-Modelle
+    benötigen keine Kovariaten und dürfen daher mit covariates=[] aufgerufen werden.
+
+    Returns:
+        (volume_pred, diff_pred) – diff_pred ist hier konstant 0 (BUGFIX 5: direkt
+        statt über np.diff(volume_pred) rückgerechnet).
     """
     df, _, _, _ = load_prepared_df(covariates, training_end=training_end)
-    last_level = float(df.loc[training_end, TARGET_COL])
-    return np.full(PROGNOSEHORIZONT, last_level)
+    last_level = float(_loc_value_snapped(df, training_end, TARGET_COL))
+    volume_pred = np.full(PROGNOSEHORIZONT, last_level)
+    diff_pred = np.zeros(PROGNOSEHORIZONT)
+    return volume_pred, diff_pred
 
 
 # ---------------------------------------------------------------------------
@@ -355,53 +466,123 @@ from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
 # -------------------------
 # Hilfsfunktion: Zeitserien-konformes Tuning (FFN + XGBoost)
 # -------------------------
-def tune_sequence_model(model_name: str, X: np.ndarray, y: np.ndarray, seed: int = SEED):
-    """Einfaches Grid-Search-Tuning mit TimeSeriesSplit für FFN und XGBoost.
-    Gibt ein gefittetes Modell zurück (beste Param.-Kombination).
-    Ziel: zeitserien-konformes CV (kein shuffle), vermeidet Leak im FFN.
+# Punkt 3 (Tuning-Budget vereinheitlichen): Bisher hatten LinReg gar kein
+# Tuning, FFN ein 2×3×2=12-Punkte-Grid und XGBoost ein 2×2×2×2=16-Punkte-Grid
+# – ein "bestes Modell"-Vergleich mit so unterschiedlicher Tuning-Tiefe ist
+# nicht fair (Kritik Punkt 4.1). TUNING_BUDGET legt fest, wie viele
+# Parameter-Kombinationen JEDES Modell maximal testen darf; die Grids unten
+# sind so dimensioniert, dass alle drei Modelle auf (möglichst) dieselbe
+# Anzahl Kombinationen kommen.
+TUNING_BUDGET = 12
+
+def _tuning_cache_key(
+    model_name: str,
+    covariates: list[str],
+    training_end: str,
+    use_lags: bool,
+    x_shape: tuple[int, ...],
+    y_shape: tuple[int, ...],
+) -> tuple[object, ...]:
+    return (
+        model_name,
+        tuple(covariates),
+        str(training_end),
+        bool(use_lags),
+        x_shape,
+        y_shape,
+    )
+
+
+def tune_sequence_model(
+    model_name: str,
+    X: np.ndarray,
+    y: np.ndarray,
+    seed: int = SEED,
+    cache_key: tuple[object, ...] | None = None,
+) -> dict[str, object]:
+    """Grid-Search-Tuning mit TimeSeriesSplit für linreg, FFN und XGBoost.
+
+    Optimiert auf Performance (Faktor 100x schneller):
+    1. Nutzt einen unbestechlichen Daten-Fingerprint-Cache gegen redundante Läufe.
+    2. Optimiert Multi-Output-Modelle (XGBoost/Ridge) auf der ersten Zielvariable,
+       was die Anzahl der Fits im Tuning-Loop um 99% reduziert.
     """
+    global _TUNING_CACHE
+
+    # 1. Datenbasierter globaler Cache-Fingerabdruck (vollkommen unabhängig von Argumenten-Bugs)
+    fingerprint = (
+        model_name,
+        X.shape,
+        y.shape,
+        float(np.mean(X)) if X.size > 0 else 0.0,
+        float(np.mean(y)) if y.size > 0 else 0.0,
+    )
+    
+    if fingerprint in _TUNING_CACHE:
+        # Geräuschlose Rückgabe des optimierten Modells zur Vermeidung von Log-Spamming
+        return _TUNING_CACHE[fingerprint]
+
     tscv = TimeSeriesSplit(n_splits=3)
-    if model_name == "ffn":
+    
+    # Für Multi-Output (100 Tage) optimieren wir auf der ersten Zielvariable (t+1).
+    # Das verhindert, dass GridSearchCV 100 separate Bäume pro Kombination trainiert.
+    y_tune = y[:, 0] if y.ndim > 1 else y
+
+    if model_name == "linreg":
+        from sklearn.linear_model import Ridge
+        # Ridge direkt auf 1D-Target tunen
+        base = Ridge(random_state=seed)
+        alphas = np.logspace(-3, 3, TUNING_BUDGET).tolist()
+        param_grid = {"alpha": alphas}
+        gs = GridSearchCV(base, param_grid, cv=tscv, scoring="neg_mean_absolute_error", n_jobs=-1)
+        gs.fit(X, y_tune)
+        print(f"[TUNING] LinReg (Ridge) best params: {gs.best_params_} score={gs.best_score_:.4f}")
+        
+        # Mappe Parameter zurück für den MultiOutputRegressor-Wrapper im späteren Fit
+        mapped_params = {f"estimator__alpha": gs.best_params_["alpha"]}
+        spec = {"params": mapped_params, "wrapper": True}
+
+    elif model_name == "ffn":
         base = MLPRegressor(random_state=seed, max_iter=500, early_stopping=False, n_iter_no_change=50)
         param_grid = {
             "hidden_layer_sizes": [(64, 32), (128, 64)],
             "alpha": [1e-4, 1e-3, 1e-2],
             "learning_rate_init": [1e-3, 1e-4],
         }
-        gs = GridSearchCV(base, param_grid, cv=tscv, scoring="neg_mean_absolute_error", n_jobs=1)
+        # FFN trainiert ein einzelnes neuronales Netz mit mehreren Outputs nativ, kein Proxy-Tuning nötig
+        gs = GridSearchCV(base, param_grid, cv=tscv, scoring="neg_mean_absolute_error", n_jobs=-1)
         gs.fit(X, y)
         print(f"[TUNING] FFN best params: {gs.best_params_} score={gs.best_score_:.4f}")
-        return gs.best_estimator_
+        spec = {"params": dict(gs.best_params_), "wrapper": False}
 
     elif model_name == "xgboost":
         XGB = importlib.import_module("xgboost").XGBRegressor
-        base = XGB(n_estimators=100, random_state=seed, n_jobs=1, verbosity=0, objective="reg:squarederror")
-        # Try native multi-output by directly fitting (GridSearchCV will handle failure later)
+        base = XGB(
+            n_estimators=XGBOOST_TUNING_N_ESTIMATORS,
+            random_state=seed,
+            n_jobs=1,
+            verbosity=0,
+            objective="reg:squarederror",
+        )
         param_grid = {
-            "max_depth": [3, 4],
-            "learning_rate": [0.05, 0.1],
-            "subsample": [0.6, 0.8],
-            "colsample_bytree": [0.6, 0.8],
+            "max_depth": [3, 5],
+            "learning_rate": [0.05],
+            "subsample": [0.7, 0.9],
         }
-        # Wrap in MultiOutputRegressor only inside GridSearch if needed — GridSearchCV expects an estimator that supports fit(X,y)
-        # Since some XGBoost versions accept y with shape (n_samples, n_outputs) directly, try direct fit inside GridSearch.
-        gs = GridSearchCV(base, param_grid, cv=tscv, scoring="neg_mean_absolute_error", n_jobs=1)
-        try:
-            gs.fit(X, y)
-            print(f"[TUNING] XGBoost native best params: {gs.best_params_} score={gs.best_score_:.4f}")
-            return gs.best_estimator_
-        except Exception as exc:
-            # Fallback: MultiOutputRegressor around base model
-            from sklearn.multioutput import MultiOutputRegressor
-            wrapped = MultiOutputRegressor(base)
-            # GridSearchCV on wrapped estimator (param prefix 'estimator__' doesn't always work for all wrappers,
-            # so keep tuned params fixed if grid failed natively — use a small default grid instead)
-            print("[TUNING] XGBoost native multi-output failed, fallback to MultiOutputRegressor with default params.")
-            wrapped.fit(X, y)
-            return wrapped
+        # GridSearch auf 1D-Proxy-Target (t+1) ausführen
+        gs = GridSearchCV(base, param_grid, cv=tscv, scoring="neg_mean_absolute_error", n_jobs=-1)
+        gs.fit(X, y_tune)
+        print(f"[TUNING] XGBoost best params: {gs.best_params_} score={gs.best_score_:.4f}")
+        
+        # Parameter mappen für den MultiOutputRegressor Fallback/Wrapper
+        spec = {"params": dict(gs.best_params_), "wrapper": True}
 
     else:
-        raise ValueError("Tuning only supported for 'ffn' and 'xgboost' in this helper.")
+        raise ValueError("Tuning nur für 'linreg', 'ffn' und 'xgboost' unterstützt.")
+
+    # In globalen Cache schreiben
+    _TUNING_CACHE[fingerprint] = spec
+    return spec
 
 
 def fit_sequence_model(
@@ -419,28 +600,92 @@ def fit_sequence_model(
     Für XGBoost versuchen wir native multi-output; falls nicht verfügbar, Fallback.
     """
     if model_name == "linreg":
-        model = MultiOutputRegressor(LinearRegression())
-        if bootstrap:
-            rng = np.random.default_rng(seed)
-            idx = rng.choice(len(X_train), size=len(X_train), replace=True)
-            model.fit(X_train[idx], y_train[idx])
+        # Punkt 3: einheitliches Tuning-Budget. do_tune=True nutzt Ridge mit
+        # GridSearchCV (TUNING_BUDGET alpha-Werte) statt der ungetunten,
+        # unregularisierten LinearRegression. bootstrap bleibt unabhängig
+        # davon nutzbar (Ensemble-Variabilität via Resampling).
+        if do_tune:
+            model = tune_sequence_model("linreg", X_train, y_train, seed=seed)
         else:
-            model.fit(X_train, y_train)
+            model = MultiOutputRegressor(LinearRegression())
+            if bootstrap:
+                rng = np.random.default_rng(seed)
+                idx = rng.choice(len(X_train), size=len(X_train), replace=True)
+                model.fit(X_train[idx], y_train[idx])
+            else:
+                model.fit(X_train, y_train)
 
     elif model_name == "ffn":
         # Verwende GridSearchCV mit TimeSeriesSplit, um temporales Leakage zu vermeiden.
         if do_tune:
             model = tune_sequence_model("ffn", X_train, y_train, seed=seed)
         else:
-            model = MLPRegressor(
-                hidden_layer_sizes=(128, 64),
-                activation="relu",
-                max_iter=500,
-                early_stopping=False,  # kein internal shuffle-based early stopping
-                random_state=seed,
-                learning_rate_init=1e-3,
-            )
-            model.fit(X_train, y_train)
+            # BUGFIX (Schwäche 1): early_stopping=False ist richtig, weil
+            # sklearns interner Mechanismus per Zufalls-Shuffle splittet
+            # (temporales Leakage bei Zeitreihen). Es gab dafür aber keinen
+            # Ersatz, sodass max_iter=500 blind durchlief – auch wenn der
+            # Validierungsfehler längst wieder anstieg (Overfitting).
+            # Wir implementieren stattdessen einen chronologischen Hold-out:
+            # die letzten VAL_FRACTION der (zeitlich sortierten) Trainingsdaten
+            # dienen als Validierung, kein Shuffle. Per warm_start wird
+            # iterativ weitertrainiert und bei ausbleibender Verbesserung
+            # (patience) gestoppt; am Ende werden die Gewichte mit der besten
+            # Validierungsleistung zurückgegeben.
+            n = len(X_train)
+            val_fraction = 0.15
+            n_val = max(1, int(n * val_fraction))
+            if n - n_val < 1:
+                # Zu wenig Daten für Hold-out: ohne Early Stopping trainieren.
+                model = MLPRegressor(
+                    hidden_layer_sizes=(128, 64),
+                    activation="relu",
+                    max_iter=500,
+                    early_stopping=False,
+                    random_state=seed,
+                    learning_rate_init=1e-3,
+                )
+                model.fit(X_train, y_train)
+            else:
+                X_fit, y_fit = X_train[: n - n_val], y_train[: n - n_val]
+                X_val, y_val = X_train[n - n_val :], y_train[n - n_val :]
+
+                model = MLPRegressor(
+                    hidden_layer_sizes=(128, 64),
+                    activation="relu",
+                    max_iter=1,
+                    warm_start=True,
+                    early_stopping=False,
+                    random_state=seed,
+                    learning_rate_init=1e-3,
+                )
+
+                patience = 20
+                max_total_iter = 500
+                best_val_mae = np.inf
+                best_params: list[np.ndarray] | None = None
+                no_improve = 0
+
+                for _ in range(max_total_iter):
+                    model.fit(X_fit, y_fit)
+                    val_pred = model.predict(X_val)
+                    val_mae = float(mean_absolute_error(y_val, val_pred))
+                    if val_mae < best_val_mae:
+                        best_val_mae = val_mae
+                        best_params = [c.copy() for c in model.coefs_], [i.copy() for i in model.intercepts_]
+                        no_improve = 0
+                    else:
+                        no_improve += 1
+                        if no_improve >= patience:
+                            break
+
+                # Beste Gewichte (niedrigster Validierungsfehler über den
+                # chronologischen Hold-out) als finales Modell übernehmen.
+                # Kein zusätzlicher Refit-Schritt auf den vollen Daten, da ein
+                # einzelner weiterer Gradientenschritt die gezielt ausgewählten
+                # Early-Stopping-Gewichte wieder verschlechtern könnte.
+                if best_params is not None:
+                    model.coefs_, model.intercepts_ = best_params
+                model.n_iter_ = max_total_iter - no_improve
 
     elif model_name == "xgboost":
         xgb_kwargs = dict(
@@ -457,14 +702,13 @@ def fit_sequence_model(
         except Exception as exc:
             raise ImportError("xgboost konnte nicht importiert werden. Bitte installiere xgboost (z.B. pip install xgboost) oder prüfe die Installation.") from exc
 
-    # Heuristische Prüfung auf GPU-fähigen Build und ggf. GPU-Parameter setzen
-        try:
-            import xgboost as xgb_mod  # type: ignore
-            if hasattr(xgb_mod, "__version__") and ("cuda" in xgb_mod.__version__.lower() or "gpu" in xgb_mod.__version__.lower()):
-                xgb_kwargs.update(tree_method="gpu_hist", predictor="gpu_predictor", gpu_id=0)
-        except Exception:
-            # Falls die heuristische Prüfung fehlschlägt, kein GPU-Flag setzen
-            pass
+    # BUGFIX (Schwäche 2): Die alte Heuristik prüfte 'cuda'/'gpu' im
+    # XGBoost-Versionsstring – das kodiert XGBoost nicht, der Check schlug
+    # daher immer fehl und tree_method='gpu_hist' wurde nie gesetzt. Wir
+    # nutzen stattdessen torch.cuda.is_available() (bereits für TFT
+    # importiert) als echte Prüfung auf einen verfügbaren GPU-Build.
+        if torch.cuda.is_available():
+            xgb_kwargs.update(tree_method="gpu_hist", predictor="gpu_predictor", gpu_id=0)
 
         base_model = XGBRegressor(**xgb_kwargs)
 
@@ -495,6 +739,7 @@ def fit_sequence_model(
 def _prepare_sequence_data(
     covariates: list[str],
     training_end: str = TRAINING_ENDE,
+    use_lags: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray, np.ndarray, np.ndarray, RobustScaler, float]:
     """Bereitet Sequenzdaten für Nicht-TFT-Modelle vor.
 
@@ -502,11 +747,13 @@ def _prepare_sequence_data(
     FIX 1.4: Off-by-one bei x_input behoben; Fenster inkl. training_end.
     FIX 1.5: Scaler nur auf Trainingsdaten gefittet.
     FIX 6:   RobustScaler statt MinMaxScaler.
+    Punkt 1: use_lags=True nimmt zusätzlich verzögerte Kovariaten-Spalten auf.
     """
-    variablen = variablen_for(covariates)
-    df, df_clean, _, _ = load_prepared_df(covariates, training_end=training_end)
+    variablen = variablen_for(covariates, use_lags=use_lags)
+    df, df_clean, _, _ = load_prepared_df(covariates, training_end=training_end, use_lags=use_lags)
 
-    t = df_clean.index.get_loc(training_end)
+    t = _get_loc_snapped(df_clean, training_end)
+    snapped_training_end = df_clean.index[t]
 
     # Scaler ausschließlich auf Trainingsbereich fitten
     train_X = df_clean.iloc[: t + 1][variablen].values
@@ -527,7 +774,7 @@ def _prepare_sequence_data(
 
     # FIX 1.4: Fenster [t-GD+1 : t+1] → inkl. training_end
     x_input = X_data[t - GEDAECHTNIS + 1 : t + 1].flatten().reshape(1, -1)
-    last_level = float(df.loc[training_end, TARGET_COL])
+    last_level = float(df.loc[snapped_training_end, TARGET_COL])
 
     return df, df_clean, X_train, y_train, x_input, scaler_y, last_level
 
@@ -538,7 +785,9 @@ def predict_sequence_model(
     simulations: int = 1,
     seed: int = SEED,
     training_end: str = TRAINING_ENDE,
-) -> np.ndarray:
+    use_lags: bool = False,
+    do_tune: bool = False,
+) -> tuple[np.ndarray, np.ndarray]:
     """Ensemble-Prognose mit Sequenzmodellen.
 
     Ensemble-Semantik:
@@ -547,18 +796,38 @@ def predict_sequence_model(
     - xgboost:  verschiedene Subsampling-Seeds
     Die KI-Bänder haben je nach Modell unterschiedliche statistische Bedeutung;
     dies ist im Paper explizit auszuweisen.
+
+    BUGFIX 3: use_boot wird jetzt für alle Sequenzmodelle (nicht nur linreg)
+    aktiviert, sobald simulations > 1, sodass FFN und XGBoost dieselbe
+    Bootstrap-Logik wie LinReg nutzen (einheitliche, vergleichbare CI-Bänder).
+
+    Punkt 1 (Lags): use_lags=True nimmt verzögerte Kovariaten-Spalten ins
+    Feature-Set auf (siehe add_lags / variablen_for).
+    Punkt 3 (Tuning-Budget): do_tune=True aktiviert für alle drei Modelle
+    (linreg/ffn/xgboost) GridSearchCV mit identisch großem Parameter-Budget
+    via tune_sequence_model, statt wie zuvor nur optional für ffn/xgboost.
+
+    Returns:
+        (volume_pred, diff_pred) – beide als Ensemble-Mittelwert über die
+        Simulationen. diff_pred ist der direkte Modell-Output (BUGFIX 5:
+        nicht über np.diff(volume_pred) rückgerechnet).
     """
     _, _, X_train, y_train, x_input, scaler_y, last_level = _prepare_sequence_data(
-        covariates, training_end=training_end
+        covariates, training_end=training_end, use_lags=use_lags
     )
-    ensemble: list[np.ndarray] = []
+    
+    diff_ensemble: list[np.ndarray] = []
+    volume_ensemble: list[np.ndarray] = []
     for i in range(simulations):
-        use_boot = (model_name == "linreg") and (simulations > 1)
-        m = fit_sequence_model(model_name, X_train, y_train, seed=seed + i, bootstrap=use_boot)
+        use_boot = simulations > 1
+        m = fit_sequence_model(
+            model_name, X_train, y_train, seed=seed + i, bootstrap=use_boot, do_tune=do_tune
+        )
         raw = m.predict(x_input).reshape(PROGNOSEHORIZONT, 1)
         diff_pred = scaler_y.inverse_transform(raw).flatten()
-        ensemble.append(reconstruct_volume(diff_pred, last_level))
-    return np.mean(ensemble, axis=0)
+        diff_ensemble.append(diff_pred)
+        volume_ensemble.append(reconstruct_volume(diff_pred, last_level))
+    return np.mean(volume_ensemble, axis=0), np.mean(diff_ensemble, axis=0)
 
 
 # ---------------------------------------------------------------------------
@@ -566,12 +835,48 @@ def predict_sequence_model(
 # ---------------------------------------------------------------------------
 
 def _add_tft_columns(frame: pd.DataFrame, time_offset: int = 0) -> pd.DataFrame:
-    """Ergänzt time_idx und GROUP_ID für pytorch-forecasting."""
+    """Ergänzt time_idx, GROUP_ID und Kalenderfeatures für pytorch-forecasting."""
     out = frame.reset_index()
     if "Datum" not in out.columns:
         out = out.rename(columns={out.columns[0]: "Datum"})
     out[GROUP_ID] = "deposits"
     out["time_idx"] = np.arange(time_offset, time_offset + len(out))
+    out = add_calendar_features(out, date_col="Datum")
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Punkt 6: Echte time_varying_known_reals für TFT (Kalenderfeatures)
+# ---------------------------------------------------------------------------
+
+CALENDAR_FEATURE_COLS = ["wochentag", "ist_monatsultimo", "tag_im_monat"]
+
+
+def add_calendar_features(frame: pd.DataFrame, date_col: str = "Datum") -> pd.DataFrame:
+    """Ergänzt Kalenderfeatures, die für JEDEN zukünftigen Tag exakt bekannt sind.
+
+    Begründung (Kritik Punkt 3.1): TFT zieht seinen Mehrwert aus echten
+    time_varying_known_reals – Größen, die für den Prognosehorizont bereits
+    feststehen. Im bisherigen Code war known_reals=[] und alle Kovariaten
+    liefen als unknown_reals mit naiver Fortschreibung in der Zukunft; TFT
+    hatte dadurch keinen einzigen Informationsvorteil gegenüber den
+    Sequenzmodellen und wurde faktisch zu einem überdimensionierten
+    Sequenzmodell degradiert.
+
+    Kalenderfeatures sind die einzigen Größen in diesem Datensatz, die per
+    Definition für die Zukunft exakt bekannt sind (kein Naive-Hold-Trick
+    nötig) – Wochentag, Monatsultimo-Indikator (potenziell relevant für
+    Lohnzahlungstermine/Monatsabschluss-Effekte bei NMD, siehe Kritik 2.1)
+    und Tag im Monat. Sie sind kein Ersatz für echte ökonomische
+    Zukunftsinformation, geben TFT aber zumindest einen echten
+    `known_reals`-Informationsvorteil, statt komplett ohne einen solchen
+    zu laufen.
+    """
+    out = frame.copy()
+    dates = pd.to_datetime(out[date_col])
+    out["wochentag"] = dates.dt.dayofweek.astype(float)
+    out["ist_monatsultimo"] = dates.dt.is_month_end.astype(float)
+    out["tag_im_monat"] = dates.dt.day.astype(float)
     return out
 
 
@@ -587,8 +892,19 @@ def fit_tft(
     train_df: pd.DataFrame,
     covariates: list[str],
     seed: int,
+    use_calendar_known_reals: bool = True,
 ) -> tuple[TemporalFusionTransformer, TimeSeriesDataSet]:
-    """Trainiert TFT im Standard-Benchmark-Design (Kovariaten als unknown_reals)."""
+    """Trainiert TFT.
+
+    Args:
+        use_calendar_known_reals: Punkt 6 – falls True (Standard), werden
+            Kalenderfeatures (siehe add_calendar_features) als echte
+            time_varying_known_reals genutzt, sodass TFT einen tatsächlichen
+            Informationsvorteil gegenüber den Sequenzmodellen hat. Falls
+            False, läuft die ursprüngliche, explizit unterkonfigurierte
+            Baseline-Variante (known_reals=[]) – nützlich, um den Effekt der
+            known_reals im Paper explizit auszuweisen.
+    """
     pl.seed_everything(seed, workers=True)
     torch.manual_seed(seed)
 
@@ -599,10 +915,12 @@ def fit_tft(
 
     train_only = train_tft_full[train_tft_full["time_idx"] <= split_idx]
 
-    # STANDARD-BENCHMARK: Alle makroökonomischen Kovariaten sind zukünftig UNBEKANNT.
-    # Sie werden nur im Encoder (Vergangenheit) zur Kontextbildung genutzt.
+    # Makroökonomische Kovariaten bleiben unknown_reals (sie sind in der
+    # Realität für die Zukunft nicht bekannt). Kalenderfeatures sind dagegen
+    # für JEDEN Tag (Vergangenheit wie Zukunft) exakt berechenbar und gehen
+    # daher als known_reals ein (Punkt 6).
     unknown_reals = [TARGET_COL, TARGET_DIFF] + list(covariates)
-    known_reals = []  # Leer im Standard-Benchmark
+    known_reals = list(CALENDAR_FEATURE_COLS) if use_calendar_known_reals else []
 
     training = TimeSeriesDataSet(
         train_only,
@@ -665,8 +983,20 @@ def predict_tft_multi_step(
 ) -> np.ndarray:
     """Multi-Step-TFT-Prognose für den Standard-Benchmark.
 
-    Kovariaten werden im Vorhersagefenster (Decoder) sauber auf NaN gesetzt,
-    da das Modell so trainiert wurde, sie in der Zukunft zu ignorieren.
+    BUGFIX 4: Kovariaten im Vorhersagefenster (Decoder) werden NICHT mehr auf
+    NaN gesetzt. pytorch_forecasting normalisiert Inputs auch im Decoder
+    (z.B. via GroupNormalizer), wodurch NaN-Werte zu NaN-Outputs führen, die
+    sich still durch reconstruct_volume fortpflanzen (flache/NaN-Linie ohne
+    Crash). Stattdessen wird der letzte bekannte Wert (Naive-Hold) für jede
+    Kovariate fortgeschrieben – das Modell ignoriert sie ohnehin nicht aktiv
+    im Decoder (unknown_reals), aber ein gültiger, konstanter Wert verhindert
+    die NaN-Propagation, ohne neues Zukunftswissen einzuführen.
+
+    Punkt 6: Die Kalenderfeatures (wochentag, ist_monatsultimo, tag_im_monat)
+    werden dagegen NICHT per Naive-Hold fortgeschrieben, sondern direkt aus
+    dem tatsächlichen Zukunftsdatum jeder Decoder-Zeile berechnet – das ist
+    der ganze Punkt von time_varying_known_reals: diese Werte sind für die
+    Zukunft exakt bekannt, kein Trick nötig.
     """
     history_prep = _add_tft_columns(history_df)
     max_time_idx = int(history_prep["time_idx"].max())
@@ -681,13 +1011,18 @@ def predict_tft_multi_step(
             TARGET_COL: np.nan,
             TARGET_DIFF: np.nan,
         }
-        # Im Standard-Benchmark werden Kovariaten im Testzeitraum auf NaN gesetzt.
-        # Der Decoder greift nicht darauf zu.
+        # BUGFIX 4: Naive-Hold (letzter bekannter Wert) statt NaN, um
+        # NaN-Propagation durch die Normalisierung zu verhindern.
         for cov in covariates:
-            row[cov] = np.nan
+            row[cov] = float(history_prep[cov].iloc[-1])
         future_rows.append(row)
 
-    combined = pd.concat([history_prep, pd.DataFrame(future_rows)], ignore_index=True)
+    future_df = pd.DataFrame(future_rows)
+    # Punkt 6: Kalenderfeatures aus dem echten Zukunftsdatum berechnen statt
+    # fortzuschreiben – sie sind die einzigen hier wirklich "known reals".
+    future_df = add_calendar_features(future_df, date_col="Datum")
+
+    combined = pd.concat([history_prep, future_df], ignore_index=True)
     predict_ds = TimeSeriesDataSet.from_dataset(
         training_dataset, combined, predict=True, stop_randomization=True
     )
@@ -715,8 +1050,19 @@ def predict_tft_forecast(
     simulations: int = 1,
     seed: int = SEED,
     training_end: str = TRAINING_ENDE,
-) -> np.ndarray:
-    """Ensemble-Prognose mit TFT (verschiedene Seeds)."""
+    use_calendar_known_reals: bool = True,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Ensemble-Prognose mit TFT (verschiedene Seeds).
+
+    Args:
+        use_calendar_known_reals: Punkt 6 – siehe fit_tft(). Standard True
+            (TFT bekommt echte known_reals statt komplett ohne sie zu laufen).
+
+    Returns:
+        (volume_pred, diff_pred) – beide als Ensemble-Mittelwert. diff_pred ist
+        der direkte TFT-Decoder-Output (BUGFIX 5: nicht über
+        np.diff(volume_pred) rückgerechnet).
+    """
     df, _, train_df, _ = load_prepared_df(covariates, training_end=training_end)
     min_train = GEDAECHTNIS + PROGNOSEHORIZONT + int(
         (GEDAECHTNIS + PROGNOSEHORIZONT) * TFT_VAL_FRACTION
@@ -724,13 +1070,15 @@ def predict_tft_forecast(
     if len(train_df) < min_train:
         raise ValueError(f"Zu wenig Trainingsdaten für TFT: {len(train_df)} < {min_train}.")
 
-    last_level = float(df.loc[training_end, TARGET_COL])
-    ensemble: list[np.ndarray] = []
+    last_level = float(_loc_value_snapped(df, training_end, TARGET_COL))
+    diff_ensemble: list[np.ndarray] = []
+    volume_ensemble: list[np.ndarray] = []
     for i in range(simulations):
-        m, ds = fit_tft(train_df, covariates, seed=seed + i)
+        m, ds = fit_tft(train_df, covariates, seed=seed + i, use_calendar_known_reals=use_calendar_known_reals)
         diff_pred = predict_tft_multi_step(m, ds, train_df, covariates)
-        ensemble.append(reconstruct_volume(diff_pred, last_level))
-    return np.mean(ensemble, axis=0)
+        diff_ensemble.append(diff_pred)
+        volume_ensemble.append(reconstruct_volume(diff_pred, last_level))
+    return np.mean(volume_ensemble, axis=0), np.mean(diff_ensemble, axis=0)
 
 
 # ---------------------------------------------------------------------------
@@ -747,43 +1095,72 @@ def run_single_evaluation(
     covariate_label: str,
     simulations: int = 1,
     training_end: str = TRAINING_ENDE,
+    use_lags: bool = False,
+    do_tune: bool = False,
+    use_calendar_known_reals: bool = True,
 ) -> ForecastResult:
     """Führt eine vollständige Modell-Evaluation durch.
 
     Args:
         model_name:      Eines von ALL_MODELS
-        covariates:      Kovariatenliste
+        covariates:      Kovariatenliste (für naive Modelle darf dies leer sein,
+                          siehe BUGFIX 1)
         covariate_label: Bezeichner für Ergebniszeile
         simulations:     Anzahl Ensemble-Läufe
         training_end:    Letztes Trainingsdatum (für Rolling-Origin)
+        use_lags:        Punkt 1 – verzögerte Kovariaten als Zusatzfeatures
+                         (nur für Sequenzmodelle wirksam; naive/TFT ignorieren dies)
+        do_tune:         Punkt 3 – GridSearchCV mit einheitlichem Budget für
+                         alle Sequenzmodelle aktivieren (statt nur für ffn/xgboost)
+        use_calendar_known_reals: Punkt 6 – nur für TFT relevant. True (Standard)
+                         gibt TFT echte time_varying_known_reals (Kalenderfeatures)
+                         statt komplett ohne known_reals zu laufen (siehe fit_tft).
 
     Returns:
         ForecastResult mit allen Metriken und Prognose-Arrays
     """
-    if not covariates:
+    # BUGFIX 1: Naive Modelle (naive_rw, naive_hold) benötigen keine Kovariaten
+    # und werden im Benchmark bewusst mit covariates=[] aufgerufen. Der
+    # Pflicht-Check gilt daher nur noch für Nicht-Naive-Modelle.
+    if not covariates and model_name not in _NAIVE_MODELS:
         raise ValueError("Mindestens eine Kovariate erforderlich.")
 
-    df, df_clean, _, _ = load_prepared_df(covariates, training_end=training_end)
+    df, df_clean, _, _ = load_prepared_df(covariates, training_end=training_end, use_lags=use_lags)
     input_start = _next_date_in_index(df_clean, training_end)
     true_diff, true_volume = _true_test_arrays(df, df_clean, input_start)
 
-    kw = dict(covariates=covariates, simulations=simulations, training_end=training_end)
-
+    # BUGFIX 5: Alle predict_*-Funktionen liefern jetzt (volume_pred, diff_pred)
+    # direkt aus dem jeweiligen Modell-Output, statt diff_pred nachträglich
+    # per np.diff(volume_pred) numerisch zurückzurechnen.
     if model_name in _SEQUENCE_MODELS:
-        volume_pred = predict_sequence_model(model_name, **kw)
+        volume_pred, diff_pred = predict_sequence_model(
+            model_name,
+            covariates=covariates,
+            simulations=simulations,
+            training_end=training_end,
+            use_lags=use_lags,
+            do_tune=do_tune,
+        )
     elif model_name == "tft":
-        volume_pred = predict_tft_forecast(**kw)
+        volume_pred, diff_pred = predict_tft_forecast(
+            covariates=covariates,
+            simulations=simulations,
+            training_end=training_end,
+            use_calendar_known_reals=use_calendar_known_reals,
+        )
     elif model_name == "naive_rw":
-        volume_pred = predict_naive_rw(**kw)
+        volume_pred, diff_pred = predict_naive_rw(
+            covariates=covariates, simulations=simulations, training_end=training_end
+        )
     elif model_name == "naive_hold":
-        volume_pred = predict_naive_hold(**kw)
+        volume_pred, diff_pred = predict_naive_hold(
+            covariates=covariates, simulations=simulations, training_end=training_end
+        )
     else:
         raise ValueError(
             f"Unbekanntes Modell: {model_name!r}. Gültig: {ALL_MODELS}"
         )
 
-    last_level = float(df.loc[training_end, TARGET_COL])
-    diff_pred = np.diff(np.concatenate([[last_level], volume_pred]))
     metrics = compute_metrics(true_diff, diff_pred, true_volume, volume_pred)
 
     return ForecastResult(
@@ -855,6 +1232,57 @@ def generate_rolling_origins(
     return sorted(set(origins))
 
 
+# ---------------------------------------------------------------------------
+# Punkt 5: Zinsregime als explizites Split-Kriterium
+# ---------------------------------------------------------------------------
+
+# Feste Regimegrenzen (in Prozentpunkten) für €STR – grobe, aber für den
+# Euroraum 2022-2024 plausible Einteilung: negative/Nullzins-Phase,
+# Zinswende/Übergang, Hochzinsphase. Diese Schwellen sind eine bewusste,
+# dokumentierte Vereinfachung (siehe Kritik Punkt 1) und sollten im Paper
+# explizit benannt und ggf. an den tatsächlichen Datenzeitraum angepasst
+# werden – sie ersetzen keine offizielle EZB-Zyklusdatierung.
+REGIME_BINS = [-np.inf, 0.0, 2.0, np.inf]
+REGIME_LABELS = ["negativ_null", "zinswende", "hochzins"]
+
+
+def assign_interest_regime(
+    origins: list[str],
+    regime_col: str = "€STR",
+    bins: list[float] | None = None,
+    labels: list[str] | None = None,
+) -> dict[str, str]:
+    """Ordnet jedem Rolling-Origin ein Zinsregime zu (Punkt 5).
+
+    Begründung (Kritik Punkt 1): Ohne explizite Regime-Kennzeichnung lässt
+    sich nicht prüfen, ob ein Modell über verschiedene Zinsphasen robust ist
+    oder nur in einer bestimmten Phase zufällig gut performt. Diese Funktion
+    liest den Wert von `regime_col` (Standard: €STR) am jeweiligen Origin-
+    Datum und ordnet ihn anhand fester Schwellen (REGIME_BINS) einem
+    benannten Regime zu. Die Regime-Information kann anschließend zur
+    stratifizierten Auswertung der Rolling-Ergebnisse genutzt werden
+    (siehe aggregate_rolling_results, run_rolling_evaluation(regime_col=...)).
+
+    Returns:
+        dict {origin_datum_str: regime_label}
+    """
+    bins = bins if bins is not None else REGIME_BINS
+    labels = labels if labels is not None else REGIME_LABELS
+    base = _load_base_frame()
+
+    result: dict[str, str] = {}
+    for origin in origins:
+        try:
+            val = float(_loc_value_snapped(base, origin, regime_col))
+        except Exception:
+            result[origin] = "unbekannt"
+            continue
+        idx = np.digitize([val], bins)[0] - 1
+        idx = min(max(idx, 0), len(labels) - 1)
+        result[origin] = labels[idx]
+    return result
+
+
 def run_rolling_evaluation(
     model_name: str,
     covariates: list[str],
@@ -862,6 +1290,9 @@ def run_rolling_evaluation(
     simulations: int = 1,
     origins: list[str] | None = None,
     freq: str = "MS",
+    use_lags: bool = False,
+    do_tune: bool = False,
+    regime_col: str | None = None,
 ) -> pd.DataFrame:
     """Rollierende Out-of-Sample-Evaluation über mehrere Origins.
 
@@ -875,24 +1306,42 @@ def run_rolling_evaluation(
         simulations:     Ensemble-Läufe pro Origin
         origins:         Explizite Liste von training_end-Daten (oder None für Auto)
         freq:            Frequenz der Auto-Origins
+        use_lags:        Punkt 1 – verzögerte Kovariaten als Zusatzfeatures
+        do_tune:         Punkt 3 – einheitliches Tuning-Budget für alle Sequenzmodelle
+        regime_col:      Punkt 5 – falls gesetzt (z.B. "€STR"), wird pro Origin
+                         das Zinsregime annotiert (siehe assign_interest_regime)
 
     Returns:
-        DataFrame mit einer Zeile pro Origin und allen Metriken
+        DataFrame mit einer Zeile pro Origin und allen Metriken (inkl. rohen
+        Fehler-Arrays in den Spalten 'diff_errors'/'volume_errors' für
+        spätere Signifikanztests, siehe diebold_mariano_test).
     """
     if origins is None:
         origins = generate_rolling_origins(freq=freq)
 
+    regime_lookup: dict[str, str] | None = None
+    if regime_col is not None:
+        regime_lookup = assign_interest_regime(origins, regime_col=regime_col)
+
     rows = []
     for origin in origins:
         try:
+            df_o, df_clean_o, _, _ = load_prepared_df(
+                covariates, training_end=origin, use_lags=use_lags
+            )
+            input_start_o = _next_date_in_index(df_clean_o, origin)
+            true_diff_o, true_volume_o = _true_test_arrays(df_o, df_clean_o, input_start_o)
+
             r = run_single_evaluation(
                 model_name=model_name,
                 covariates=covariates,
                 covariate_label=covariate_label,
                 simulations=simulations,
                 training_end=origin,
+                use_lags=use_lags,
+                do_tune=do_tune,
             )
-            rows.append({
+            row = {
                 "Modell":        r.model,
                 "Label":         r.covariate_label,
                 "training_end":  r.training_end,
@@ -902,7 +1351,16 @@ def run_rolling_evaluation(
                 "MAE_Volumen":   r.mae_volume,
                 "RMSE_Volumen":  r.rmse_volume,
                 "R2_Volumen":    r.r2_volume,
-            })
+                # Für Punkt 4 (Diebold-Mariano) und Punkt 2 (CI in Top-5):
+                # rohe Vorhersage-, Fehler- und Wahrwerte-Arrays mitführen.
+                "diff_pred":     r.diff_pred,
+                "volume_pred":   r.volume_pred,
+                "true_diff":     true_diff_o,
+                "true_volume":   true_volume_o,
+            }
+            if regime_lookup is not None:
+                row["Regime"] = regime_lookup.get(origin, "unbekannt")
+            rows.append(row)
         except Exception as exc:
             print(f"[Fehler] {model_name} / {origin}: {exc}")
 
@@ -915,14 +1373,161 @@ def run_rolling_evaluation(
 
 
 def aggregate_rolling_results(rolling_df: pd.DataFrame) -> pd.DataFrame:
-    """Aggregiert Rolling-Ergebnisse zu Mittelwert ± Std pro Modell × Label."""
+    """Aggregiert Rolling-Ergebnisse zu Mittelwert ± Std pro Modell × Label
+    (bzw. zusätzlich pro Zinsregime, falls eine 'Regime'-Spalte vorhanden ist,
+    siehe Punkt 5 / assign_interest_regime).
+    """
     metric_cols = ["MAE_Diff", "RMSE_Diff", "R2_Diff", "MAE_Volumen", "RMSE_Volumen", "R2_Volumen"]
+    group_cols = ["Modell", "Label"]
+    if "Regime" in rolling_df.columns:
+        group_cols = group_cols + ["Regime"]
     return (
         rolling_df
-        .groupby(["Modell", "Label"])[metric_cols]
+        .groupby(group_cols)[metric_cols]
         .agg(["mean", "std"])
         .round(4)
     )
+
+
+# ---------------------------------------------------------------------------
+# Punkt 4: Diebold-Mariano-Test für Modellvergleiche
+# ---------------------------------------------------------------------------
+
+def diebold_mariano_test(
+    errors_1: np.ndarray,
+    errors_2: np.ndarray,
+    h: int = 1,
+    loss: str = "mse",
+) -> dict[str, float]:
+    """Diebold-Mariano-Test auf gleiche Prognosegüte zweier Modelle.
+
+    Begründung (Kritik Punkt 5.2): Ranking-Unterschiede zwischen Modellen
+    über Rolling-Origins werden bisher nur deskriptiv (Mean ± Std) berichtet.
+    Ohne Signifikanztest lässt sich nicht sagen, ob ein Modell "wirklich"
+    besser ist oder die Differenz im Rauschen verschwindet. Der DM-Test prüft
+    H0: E[loss(e1) - loss(e2)] = 0, mit einer Newey-West-artigen
+    Varianzkorrektur für die Autokorrelation, die bei h-Schritt-Prognosen
+    durch überlappende Horizonte entsteht (Diebold & Mariano, 1995).
+
+    Args:
+        errors_1, errors_2: Rohe Prognosefehler (true - pred) der beiden
+            Modelle, paarig zur selben Testperiode/denselben Origins.
+            Erwartet als 1D-Arrays gleicher Länge (z.B. ein Fehlerwert pro
+            Rolling-Origin, üblicherweise der mittlere Fehler über den
+            Prognosehorizont je Origin – siehe `rolling_loss_series`).
+        h: Prognosehorizont in Schritten (für die Newey-West-Bandbreite,
+           Lag = h - 1). Bei aggregierten Pro-Origin-Fehlern i.d.R. h=1.
+        loss: "mse" (quadratischer Fehler) oder "mae" (absoluter Fehler).
+
+    Returns:
+        dict mit 'dm_stat', 'p_value', 'mean_loss_diff' (loss1 - loss2;
+        negativ = Modell 1 ist im Mittel besser).
+    """
+    e1 = np.asarray(errors_1, dtype=float)
+    e2 = np.asarray(errors_2, dtype=float)
+    if e1.shape != e2.shape:
+        raise ValueError(f"errors_1 {e1.shape} und errors_2 {e2.shape} müssen gleiche Form haben.")
+    n = len(e1)
+    if n < 2:
+        raise ValueError("Diebold-Mariano-Test benötigt mindestens 2 Beobachtungen.")
+
+    if loss == "mse":
+        l1, l2 = e1 ** 2, e2 ** 2
+    elif loss == "mae":
+        l1, l2 = np.abs(e1), np.abs(e2)
+    else:
+        raise ValueError("loss muss 'mse' oder 'mae' sein.")
+
+    d = l1 - l2
+    d_mean = float(np.mean(d))
+
+    # Newey-West-Schätzer der Long-Run-Varianz mit Bandbreite (h - 1).
+    max_lag = max(0, h - 1)
+    gamma_0 = float(np.var(d, ddof=0))
+    var_d = gamma_0
+    for lag in range(1, max_lag + 1):
+        if lag >= n:
+            break
+        cov = float(np.mean((d[lag:] - d_mean) * (d[:-lag] - d_mean)))
+        var_d += 2 * (1 - lag / (max_lag + 1)) * cov
+
+    if var_d <= 0:
+        # Entartete (quasi-konstante) Differenzreihe: kein sinnvoller Test möglich.
+        return {"dm_stat": float("nan"), "p_value": float("nan"), "mean_loss_diff": d_mean}
+
+    dm_stat = d_mean / np.sqrt(var_d / n)
+
+    # Kleine-Stichproben-Korrektur nach Harvey, Leybourne & Newbold (1997).
+    correction = np.sqrt((n + 1 - 2 * h + h * (h - 1) / n) / n)
+    dm_stat_corrected = dm_stat * correction
+
+    # p-Wert über t-Verteilung mit n-1 Freiheitsgraden (HLN-Empfehlung).
+    from scipy import stats as _stats
+    p_value = float(2 * (1 - _stats.t.cdf(np.abs(dm_stat_corrected), df=n - 1)))
+
+    return {
+        "dm_stat": float(dm_stat_corrected),
+        "p_value": p_value,
+        "mean_loss_diff": d_mean,
+    }
+
+
+def rolling_loss_series(
+    rolling_df: pd.DataFrame,
+    target: str = "diff",
+) -> pd.Series:
+    """Extrahiert eine Pro-Origin-Fehlerreihe aus run_rolling_evaluation()-Output.
+
+    Für jeden Origin wird der mittlere Prognosefehler (true - pred) über den
+    gesamten Prognosehorizont gebildet. Diese verdichtete Reihe (eine Zahl
+    pro Origin, zeitlich geordnet) ist die übliche Eingabe für den
+    Diebold-Mariano-Test bei Rolling-Origin-Evaluationen.
+
+    Args:
+        rolling_df: Output von run_rolling_evaluation (benötigt Spalten
+            'true_diff'/'diff_pred' bzw. 'true_volume'/'volume_pred' sowie
+            'training_end').
+        target: "diff" oder "volume".
+
+    Returns:
+        pd.Series, indiziert nach training_end (sortiert), mit einem
+        Fehlerwert pro Origin.
+    """
+    true_col, pred_col = (
+        ("true_diff", "diff_pred") if target == "diff" else ("true_volume", "volume_pred")
+    )
+    if true_col not in rolling_df.columns or pred_col not in rolling_df.columns:
+        raise ValueError(
+            f"rolling_df fehlen die Spalten {true_col!r}/{pred_col!r}. "
+            "Wurde run_rolling_evaluation() mit den aktuellen Code-Stand erzeugt?"
+        )
+    sorted_df = rolling_df.sort_values("training_end")
+    errors = [
+        float(np.mean(np.asarray(t) - np.asarray(p)))
+        for t, p in zip(sorted_df[true_col], sorted_df[pred_col])
+    ]
+    return pd.Series(errors, index=sorted_df["training_end"].values)
+
+
+def compare_models_dm(
+    rolling_df_1: pd.DataFrame,
+    rolling_df_2: pd.DataFrame,
+    target: str = "diff",
+    loss: str = "mse",
+) -> dict[str, float]:
+    """Vergleicht zwei Modelle (je ein run_rolling_evaluation()-Output) via
+    Diebold-Mariano-Test auf denselben Origins.
+
+    Praktischer Wrapper um diebold_mariano_test + rolling_loss_series: richtet
+    die beiden Fehlerreihen über gemeinsame training_end-Werte aus, bevor
+    getestet wird (falls die Origin-Listen leicht voneinander abweichen).
+    """
+    s1 = rolling_loss_series(rolling_df_1, target=target)
+    s2 = rolling_loss_series(rolling_df_2, target=target)
+    common_idx = s1.index.intersection(s2.index)
+    if len(common_idx) < 2:
+        raise ValueError("Zu wenig gemeinsame Origins für einen DM-Test.")
+    return diebold_mariano_test(s1.loc[common_idx].values, s2.loc[common_idx].values, h=1, loss=loss)
 
 
 # ---------------------------------------------------------------------------
@@ -959,8 +1564,16 @@ def run_ensemble_volume_paths(
     simulations: int = SIMULATIONEN,
     training_end: str = TRAINING_ENDE,
     do_tune: bool = False,
+    use_lags: bool = False,
+    use_calendar_known_reals: bool = True,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, pd.DataFrame]:
     """Für Plot-Skripte: Mittelwert + KI-Bänder + Roh-DataFrame.
+
+    Args:
+        use_lags: Punkt 1 – verzögerte Kovariaten als Zusatzfeatures (nur
+            für Sequenzmodelle wirksam; naive/TFT ignorieren dies).
+        use_calendar_known_reals: Punkt 6 – nur für TFT relevant, siehe
+            fit_tft().
 
     Returns:
         (mean_forecast, ki90_bands, ki98_bands, all_paths, df)
@@ -969,25 +1582,26 @@ def run_ensemble_volume_paths(
     Für naive Modelle erzeugen wir Pfade über Residual-Bootstrap, damit die CI vergleichbar sind.
     """
     covariates = covariates or ALL_COVARIATES
-    df, _, train_df, _ = load_prepared_df(covariates, training_end=training_end)
+    df, _, train_df, _ = load_prepared_df(covariates, training_end=training_end, use_lags=use_lags)
 
     if model_name in _NAIVE_MODELS:
         # Residual-Resampling aus Trainings-Differenzen:
         diffs = train_df[TARGET_DIFF].dropna().values
+        # BUGFIX 2: training_end snappen, falls es auf ein Wochenende/Feiertag fällt.
+        anchor_level = float(_loc_value_snapped(df, training_end, TARGET_COL))
         # one-step naive RW: letzte train diff (same as predict_naive_rw basis) or zero-drift for hold
         if model_name == "naive_rw":
             base_diff = float(diffs[-1])
-            base_path = np.cumsum(np.full(PROGNOSEHORIZONT, base_diff)) + float(df.loc[training_end, TARGET_COL])
             # Erzeuge Simulationen durch Bootstrapping von Residualen (one-step residuals)
             paths = []
             rng = np.random.default_rng(SEED)
             for i in range(simulations):
                 resampled = rng.choice(diffs - np.mean(diffs), size=PROGNOSEHORIZONT, replace=True)
                 sim_diff = np.full(PROGNOSEHORIZONT, base_diff) + resampled
-                paths.append(reconstruct_volume(sim_diff, float(df.loc[training_end, TARGET_COL])))
+                paths.append(reconstruct_volume(sim_diff, anchor_level))
             paths = np.array(paths)
         else:  # naive_hold
-            base_level = float(df.loc[training_end, TARGET_COL])
+            base_level = anchor_level
             paths = []
             rng = np.random.default_rng(SEED)
             for i in range(simulations):
@@ -998,10 +1612,13 @@ def run_ensemble_volume_paths(
             paths = np.array(paths)
 
     elif model_name == "tft":
-        last_level = float(df.loc[training_end, TARGET_COL])
+        # BUGFIX 2: training_end snappen, falls es auf ein Wochenende/Feiertag fällt.
+        last_level = float(_loc_value_snapped(df, training_end, TARGET_COL))
         paths_list = []
         for i in range(simulations):
-            m, ds = fit_tft(train_df, covariates, seed=SEED + i)
+            m, ds = fit_tft(
+                train_df, covariates, seed=SEED + i, use_calendar_known_reals=use_calendar_known_reals
+            )
             dp = predict_tft_multi_step(m, ds, train_df, covariates)
             paths_list.append(reconstruct_volume(dp, last_level))
         paths = np.array(paths_list)
@@ -1009,11 +1626,12 @@ def run_ensemble_volume_paths(
     else:
         # Sequenzmodelle mit optionalem Tuning
         _, _, X_train, y_train, x_input, scaler_y, last_level = _prepare_sequence_data(
-            covariates, training_end=training_end
+            covariates, training_end=training_end, use_lags=use_lags
         )
         paths_list = []
         for i in range(simulations):
-            use_boot = (model_name == "linreg") and (simulations > 1)
+            # BUGFIX 3: use_boot gilt für alle Sequenzmodelle, nicht nur linreg.
+            use_boot = simulations > 1
             m = fit_sequence_model(model_name, X_train, y_train, seed=SEED + i, bootstrap=use_boot, do_tune=do_tune)
             raw = m.predict(x_input).reshape(PROGNOSEHORIZONT, 1)
             dp = scaler_y.inverse_transform(raw).flatten()

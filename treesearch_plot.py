@@ -13,11 +13,19 @@ def plot_forecast(
     covariates=None,
     simulations: int | None = None,
     save_path: str | None = None,
+    use_lags: bool = False,
+    do_tune: bool = False,
+    use_calendar_known_reals: bool = True,
 ):
     covariates = covariates or tc.ALL_COVARIATES
     sims = simulations if simulations is not None else tc.SIMULATIONEN
     mittelwert, ki90, ki98, _, df = tc.run_ensemble_volume_paths(
-        model_name, covariates, simulations=sims
+        model_name,
+        covariates,
+        simulations=sims,
+        use_lags=use_lags,
+        do_tune=do_tune,
+        use_calendar_known_reals=use_calendar_known_reals,
     )
 
 

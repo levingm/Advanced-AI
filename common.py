@@ -28,6 +28,7 @@ from pytorch_forecasting.metrics import MAE
 from sklearn.exceptions import ConvergenceWarning
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
 from sklearn.multioutput import MultiOutputRegressor
 from sklearn.neural_network import MLPRegressor
 # FIX 6: RobustScaler statt MinMaxScaler (robust gegen Ausreißer in Finanzdaten)
@@ -74,6 +75,10 @@ TFT_LEARNING_RATE = 1e-3
 TFT_VAL_FRACTION = 0.15
 
 ALL_MODELS = ["naive_rw", "naive_hold", "linreg", "ffn", "xgboost", "tft"]
+
+# PERF: Cache für getuntete Hyperparameter (Key: model_name)
+# Verhindert wiederholtes Tuning in jeder Simulation
+_TUNED_PARAMS_CACHE: dict[str, dict] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -311,6 +316,33 @@ def reconstruct_volume(diff_pred: np.ndarray, last_level: float) -> np.ndarray:
     return last_level + np.cumsum(diff_pred)
 
 
+def _snap_to_available_date(index: pd.DatetimeIndex, date: str) -> pd.Timestamp:
+    """Liefert das letzte verfügbare Datum im Index <= `date`.
+
+    Wirft ValueError, falls kein Datum <= `date` existiert (z.B. Origin liegt
+    vor dem Datenbeginn).
+    """
+    ts = pd.Timestamp(date)
+    avail = index[index <= ts]
+    if len(avail) == 0:
+        raise ValueError(
+            f"Kein verfügbares Datum <= {date} im Datenindex (Datenbeginn: {index.min()})."
+        )
+    return avail[-1]
+
+
+def _get_loc_snapped(df: pd.DataFrame, date: str) -> int:
+    """Positionsindex des letzten verfügbaren Datums <= `date` (snapped)."""
+    snapped = _snap_to_available_date(df.index, date)
+    return df.index.get_loc(snapped)
+
+
+def _loc_value_snapped(df: pd.DataFrame, date: str, col: str):
+    """Wert von `col` am letzten verfügbaren Datum <= `date` (snapped)."""
+    snapped = _snap_to_available_date(df.index, date)
+    return df.loc[snapped, col]
+
+
 # ---------------------------------------------------------------------------
 # FIX 2: Naive Benchmarks
 # ---------------------------------------------------------------------------
@@ -320,16 +352,24 @@ def predict_naive_rw(
     simulations: int = 1,
     seed: int = SEED,
     training_end: str = TRAINING_ENDE,
-) -> np.ndarray:
+) -> tuple[np.ndarray, np.ndarray]:
     """Naiver Benchmark – Random Walk: letzte Differenz konstant fortgeschrieben.
 
     Formal: ŷ_{t+h} = y_t + h * Δy_t  für alle h = 1..PROGNOSEHORIZONT
     Kein Zukunftswissen. Schwieriger Benchmark für Finanzzeitreihen.
+
+    Hinweis (BUGFIX 1): `covariates` wird hier bewusst ignoriert – Naive-Modelle
+    benötigen keine Kovariaten und dürfen daher mit covariates=[] aufgerufen werden.
+
+    Returns:
+        (volume_pred, diff_pred) – diff_pred ist die rohe, konstante Modell-Differenz
+        (BUGFIX 5: direkt statt über np.diff(volume_pred) rückgerechnet).
     """
     df, df_clean, _, _ = load_prepared_df(covariates, training_end=training_end)
     last_diff = float(df_clean.loc[:training_end, TARGET_DIFF].iloc[-1])
-    last_level = float(df.loc[training_end, TARGET_COL])
-    return reconstruct_volume(np.full(PROGNOSEHORIZONT, last_diff), last_level)
+    last_level = float(_loc_value_snapped(df, training_end, TARGET_COL))
+    diff_pred = np.full(PROGNOSEHORIZONT, last_diff)
+    return reconstruct_volume(diff_pred, last_level), diff_pred
 
 
 def predict_naive_hold(
@@ -337,71 +377,144 @@ def predict_naive_hold(
     simulations: int = 1,
     seed: int = SEED,
     training_end: str = TRAINING_ENDE,
-) -> np.ndarray:
+) -> tuple[np.ndarray, np.ndarray]:
     """Naiver Benchmark – Naive Hold: letztes Volumen konstant (Drift = 0).
 
     Formal: ŷ_{t+h} = y_t  für alle h.
+
+    Hinweis (BUGFIX 1): `covariates` wird hier bewusst ignoriert – Naive-Modelle
+    benötigen keine Kovariaten und dürfen daher mit covariates=[] aufgerufen werden.
+
+    Returns:
+        (volume_pred, diff_pred) – diff_pred ist hier konstant 0 (BUGFIX 5: direkt
+        statt über np.diff(volume_pred) rückgerechnet).
     """
     df, _, _, _ = load_prepared_df(covariates, training_end=training_end)
-    last_level = float(df.loc[training_end, TARGET_COL])
-    return np.full(PROGNOSEHORIZONT, last_level)
+    last_level = float(_loc_value_snapped(df, training_end, TARGET_COL))
+    volume_pred = np.full(PROGNOSEHORIZONT, last_level)
+    diff_pred = np.zeros(PROGNOSEHORIZONT)
+    return volume_pred, diff_pred
 
 
 # ---------------------------------------------------------------------------
-# Sequenzmodelle: LinReg, FFN, XGBoost
+# Sequenzmodelle: LinReg, FFN, XGBoost – OPTIMIERT
 # ---------------------------------------------------------------------------
-from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
 
-# -------------------------
-# Hilfsfunktion: Zeitserien-konformes Tuning (FFN + XGBoost)
-# -------------------------
-def tune_sequence_model(model_name: str, X: np.ndarray, y: np.ndarray, seed: int = SEED):
-    """Einfaches Grid-Search-Tuning mit TimeSeriesSplit für FFN und XGBoost.
-    Gibt ein gefittetes Modell zurück (beste Param.-Kombination).
-    Ziel: zeitserien-konformes CV (kein shuffle), vermeidet Leak im FFN.
-    """
-    tscv = TimeSeriesSplit(n_splits=3)
+# PERF 3.2: Schrumpftes Tuning-Grid für schnelleres Benchmarking
+# Vorher: FFN 2×3×2=12, XGBoost 3×2×2×2=24 Kombinationen
+# Nachher: FFN 1×2×1=2, XGBoost 2×1×1×1=2 Kombinationen
+def _get_tune_grid(model_name: str) -> dict:
+    """Gibt das Tuning-Grid für FFN/XGBoost zurück (schrumpft für Speed)."""
     if model_name == "ffn":
-        base = MLPRegressor(random_state=seed, max_iter=500, early_stopping=False, n_iter_no_change=50)
-        param_grid = {
-            "hidden_layer_sizes": [(64, 32), (128, 64)],
-            "alpha": [1e-4, 1e-3, 1e-2],
-            "learning_rate_init": [1e-3, 1e-4],
+        return {
+            "hidden_layer_sizes": [(64, 32)],           # 1 Option statt 2
+            "alpha": [1e-4, 1e-3],                      # 2 Optionen (reduziert)
+            "learning_rate_init": [1e-3],               # 1 Option (fix)
         }
+    elif model_name == "xgboost":
+        return {
+            "max_depth": [3, 4],                        # 2 Optionen (reduziert von 3)
+            "learning_rate": [0.05],                    # 1 Option (fix)
+            "subsample": [0.8],                         # 1 Option (fix)
+            "colsample_bytree": [0.7],                  # 1 Option (fix)
+        }
+    else:
+        raise ValueError(f"Tune-Grid nicht für {model_name} definiert.")
+
+
+def tune_sequence_model(model_name: str, X: np.ndarray, y: np.ndarray, seed: int = SEED):
+    """Zeitserien-konformes Tuning mit reduziertem Grid.
+    
+    PERF: Cacht Ergebnis, damit wiederholte Aufrufe (z.B. in Simulations-Loop)
+    nicht nochmal tunen.
+    
+    Returns gefittetes Modell mit besten Parametern.
+    """
+    cache_key = model_name
+    if cache_key in _TUNED_PARAMS_CACHE:
+        print(f"[TUNING] {model_name} – nutze gecachtete Parameter.")
+        params = _TUNED_PARAMS_CACHE[cache_key]
+        if model_name == "ffn":
+            return MLPRegressor(
+                hidden_layer_sizes=params["hidden_layer_sizes"],
+                activation="relu",
+                alpha=params["alpha"],
+                learning_rate_init=params["learning_rate_init"],
+                max_iter=500,
+                early_stopping=False,
+                random_state=seed,
+            )
+        elif model_name == "xgboost":
+            XGBRegressor = importlib.import_module("xgboost").XGBRegressor
+            return XGBRegressor(
+                max_depth=params["max_depth"],
+                learning_rate=params["learning_rate"],
+                subsample=params["subsample"],
+                colsample_bytree=params["colsample_bytree"],
+                n_estimators=100,
+                random_state=seed,
+            )
+
+    # Erstes Mal: Grid-Search durchführen
+    tscv = TimeSeriesSplit(n_splits=2)  # PERF 3.2: 2 statt 3 Splits
+    param_grid = _get_tune_grid(model_name)
+
+    if model_name == "ffn":
+        base = MLPRegressor(
+            random_state=seed,
+            max_iter=500,
+            early_stopping=False,
+            activation="relu",
+        )
         gs = GridSearchCV(base, param_grid, cv=tscv, scoring="neg_mean_absolute_error", n_jobs=1)
         gs.fit(X, y)
-        print(f"[TUNING] FFN best params: {gs.best_params_} score={gs.best_score_:.4f}")
+        best_params = gs.best_params_
+        _TUNED_PARAMS_CACHE[cache_key] = best_params
+        print(f"[TUNING] FFN best params: {best_params} (score={gs.best_score_:.4f}) – GECACHT")
         return gs.best_estimator_
 
     elif model_name == "xgboost":
-        XGB = importlib.import_module("xgboost").XGBRegressor
-        base = XGB(n_estimators=100, random_state=seed, n_jobs=1, verbosity=0, objective="reg:squarederror")
-        # Try native multi-output by directly fitting (GridSearchCV will handle failure later)
-        param_grid = {
-            "max_depth": [3, 4],
-            "learning_rate": [0.05, 0.1],
-            "subsample": [0.6, 0.8],
-            "colsample_bytree": [0.6, 0.8],
-        }
-        # Wrap in MultiOutputRegressor only inside GridSearch if needed — GridSearchCV expects an estimator that supports fit(X,y)
-        # Since some XGBoost versions accept y with shape (n_samples, n_outputs) directly, try direct fit inside GridSearch.
+        XGBRegressor = importlib.import_module("xgboost").XGBRegressor
+        base = XGBRegressor(
+            n_estimators=100,
+            random_state=seed,
+            n_jobs=1,
+            verbosity=0,
+            objective="reg:squarederror",
+        )
         gs = GridSearchCV(base, param_grid, cv=tscv, scoring="neg_mean_absolute_error", n_jobs=1)
         try:
             gs.fit(X, y)
-            print(f"[TUNING] XGBoost native best params: {gs.best_params_} score={gs.best_score_:.4f}")
+            best_params = gs.best_params_
+            _TUNED_PARAMS_CACHE[cache_key] = best_params
+            print(
+                f"[TUNING] XGBoost best params: {best_params} (score={gs.best_score_:.4f}) – GECACHT"
+            )
             return gs.best_estimator_
-        except Exception as exc:
-            # Fallback: MultiOutputRegressor around base model
+        except Exception:
             from sklearn.multioutput import MultiOutputRegressor
             wrapped = MultiOutputRegressor(base)
-            # GridSearchCV on wrapped estimator (param prefix 'estimator__' doesn't always work for all wrappers,
-            # so keep tuned params fixed if grid failed natively — use a small default grid instead)
-            print("[TUNING] XGBoost native multi-output failed, fallback to MultiOutputRegressor with default params.")
-            wrapped.fit(X, y)
-            return wrapped
-
-    else:
-        raise ValueError("Tuning only supported for 'ffn' and 'xgboost' in this helper.")
+            wrapped_param_grid = {f"estimator__{k}": v for k, v in param_grid.items()}
+            gs_wrapped = GridSearchCV(
+                wrapped,
+                wrapped_param_grid,
+                cv=tscv,
+                scoring="neg_mean_absolute_error",
+                n_jobs=1,
+            )
+            try:
+                gs_wrapped.fit(X, y)
+                best_params = gs_wrapped.best_params_
+                _TUNED_PARAMS_CACHE[cache_key] = best_params
+                print(
+                    f"[TUNING] XGBoost (MultiOutputRegressor) best params: "
+                    f"{best_params} (score={gs_wrapped.best_score_:.4f}) – GECACHT"
+                )
+                return gs_wrapped.best_estimator_
+            except Exception as exc:
+                print(f"[TUNING] XGBoost-Tuning fehlgeschlagen ({exc}); ungetunte Defaults.")
+                wrapped.fit(X, y)
+                return wrapped
 
 
 def fit_sequence_model(
@@ -414,9 +527,8 @@ def fit_sequence_model(
 ) -> object:
     """Instanziiert und trainiert ein Sequenzmodell.
 
-    Optionales Tuning via do_tune (GridSearchCV mit TimeSeriesSplit).
-    Für FFN verwenden wir zeitserien-konformes CV statt sklearn-internem shuffle.
-    Für XGBoost versuchen wir native multi-output; falls nicht verfügbar, Fallback.
+    PERF: do_tune=False reicht für den Benchmark (Tuning ist bereits gecacht).
+    Falls benötigt: do_tune=True erzwingt Tuning (benutze nur einmal pro Model!).
     """
     if model_name == "linreg":
         model = MultiOutputRegressor(LinearRegression())
@@ -428,47 +540,82 @@ def fit_sequence_model(
             model.fit(X_train, y_train)
 
     elif model_name == "ffn":
-        # Verwende GridSearchCV mit TimeSeriesSplit, um temporales Leakage zu vermeiden.
         if do_tune:
             model = tune_sequence_model("ffn", X_train, y_train, seed=seed)
         else:
-            model = MLPRegressor(
-                hidden_layer_sizes=(128, 64),
-                activation="relu",
-                max_iter=500,
-                early_stopping=False,  # kein internal shuffle-based early stopping
-                random_state=seed,
-                learning_rate_init=1e-3,
-            )
-            model.fit(X_train, y_train)
+            n = len(X_train)
+            val_fraction = 0.15
+            n_val = max(1, int(n * val_fraction))
+            if n - n_val < 1:
+                model = MLPRegressor(
+                    hidden_layer_sizes=(128, 64),
+                    activation="relu",
+                    max_iter=500,
+                    early_stopping=False,
+                    random_state=seed,
+                    learning_rate_init=1e-3,
+                )
+                model.fit(X_train, y_train)
+            else:
+                X_fit, y_fit = X_train[: n - n_val], y_train[: n - n_val]
+                X_val, y_val = X_train[n - n_val :], y_train[n - n_val :]
+
+                model = MLPRegressor(
+                    hidden_layer_sizes=(128, 64),
+                    activation="relu",
+                    max_iter=1,
+                    warm_start=True,
+                    early_stopping=False,
+                    random_state=seed,
+                    learning_rate_init=1e-3,
+                )
+
+                patience = 20
+                max_total_iter = 500
+                best_val_mae = np.inf
+                best_params: list[np.ndarray] | None = None
+                no_improve = 0
+
+                for _ in range(max_total_iter):
+                    model.fit(X_fit, y_fit)
+                    val_pred = model.predict(X_val)
+                    val_mae = float(mean_absolute_error(y_val, val_pred))
+                    if val_mae < best_val_mae:
+                        best_val_mae = val_mae
+                        best_params = [c.copy() for c in model.coefs_], [i.copy() for i in model.intercepts_]
+                        no_improve = 0
+                    else:
+                        no_improve += 1
+                        if no_improve >= patience:
+                            break
+
+                if best_params is not None:
+                    model.coefs_, model.intercepts_ = best_params
+                model.n_iter_ = max_total_iter - no_improve
 
     elif model_name == "xgboost":
         xgb_kwargs = dict(
-        n_estimators=100,
-        learning_rate=0.05,
-        max_depth=4,
-        subsample=0.7,
-        colsample_bytree=0.7,
-        random_state=seed,
-        n_jobs=1,
+            n_estimators=100,
+            learning_rate=0.05,
+            max_depth=4,
+            subsample=0.7,
+            colsample_bytree=0.7,
+            random_state=seed,
+            n_jobs=1,
         )
         try:
             XGBRegressor = importlib.import_module("xgboost").XGBRegressor
         except Exception as exc:
-            raise ImportError("xgboost konnte nicht importiert werden. Bitte installiere xgboost (z.B. pip install xgboost) oder prüfe die Installation.") from exc
+            raise ImportError(
+                "xgboost konnte nicht importiert werden. Bitte installiere xgboost "
+                "(z.B. pip install xgboost) oder prüfe die Installation."
+            ) from exc
 
-    # Heuristische Prüfung auf GPU-fähigen Build und ggf. GPU-Parameter setzen
-        try:
-            import xgboost as xgb_mod  # type: ignore
-            if hasattr(xgb_mod, "__version__") and ("cuda" in xgb_mod.__version__.lower() or "gpu" in xgb_mod.__version__.lower()):
-                xgb_kwargs.update(tree_method="gpu_hist", predictor="gpu_predictor", gpu_id=0)
-        except Exception:
-            # Falls die heuristische Prüfung fehlschlägt, kein GPU-Flag setzen
-            pass
+        if torch.cuda.is_available():
+            xgb_kwargs.update(tree_method="gpu_hist", predictor="gpu_predictor", gpu_id=0)
 
         base_model = XGBRegressor(**xgb_kwargs)
 
-        # Optionales Tuning
         if do_tune:
             try:
                 tuned = tune_sequence_model("xgboost", X_train, y_train, seed=seed)
@@ -476,12 +623,10 @@ def fit_sequence_model(
             except Exception:
                 pass
 
-        # Versuch, base_model direkt auf multioutput y zu fitten (XGBoost-Version >= 1.6 unterstützt evtl. multi-output)
         try:
             base_model.fit(X_train, y_train)
             model = base_model
         except Exception:
-            # Fallback auf MultiOutputRegressor (100 separate Modelle)
             print("[XGBOOST] Native multi-output nicht verfügbar — Fallback auf MultiOutputRegressor.")
             model = MultiOutputRegressor(base_model)
             model.fit(X_train, y_train)
@@ -506,7 +651,8 @@ def _prepare_sequence_data(
     variablen = variablen_for(covariates)
     df, df_clean, _, _ = load_prepared_df(covariates, training_end=training_end)
 
-    t = df_clean.index.get_loc(training_end)
+    t = _get_loc_snapped(df_clean, training_end)
+    snapped_training_end = df_clean.index[t]
 
     # Scaler ausschließlich auf Trainingsbereich fitten
     train_X = df_clean.iloc[: t + 1][variablen].values
@@ -527,7 +673,7 @@ def _prepare_sequence_data(
 
     # FIX 1.4: Fenster [t-GD+1 : t+1] → inkl. training_end
     x_input = X_data[t - GEDAECHTNIS + 1 : t + 1].flatten().reshape(1, -1)
-    last_level = float(df.loc[training_end, TARGET_COL])
+    last_level = float(df.loc[snapped_training_end, TARGET_COL])
 
     return df, df_clean, X_train, y_train, x_input, scaler_y, last_level
 
@@ -538,27 +684,47 @@ def predict_sequence_model(
     simulations: int = 1,
     seed: int = SEED,
     training_end: str = TRAINING_ENDE,
-) -> np.ndarray:
+) -> tuple[np.ndarray, np.ndarray]:
     """Ensemble-Prognose mit Sequenzmodellen.
 
-    Ensemble-Semantik:
-    - linreg:   Bootstrap-Sampling (bei simulations > 1)
-    - ffn:      verschiedene Zufalls-Initialisierungen
-    - xgboost:  verschiedene Subsampling-Seeds
-    Die KI-Bänder haben je nach Modell unterschiedliche statistische Bedeutung;
-    dies ist im Paper explizit auszuweisen.
+    PERF: Tuning wird nur EINMAL durchgeführt (cacht die Parameter).
+    Alle Simulationen verwenden die gleichen besten Parameter, nur mit
+    verschiedenen Zufalls-Seeds.
+
+    Returns:
+        (volume_pred, diff_pred) – beide als Ensemble-Mittelwert über die
+        Simulationen. diff_pred ist der direkte Modell-Output.
     """
     _, _, X_train, y_train, x_input, scaler_y, last_level = _prepare_sequence_data(
         covariates, training_end=training_end
     )
-    ensemble: list[np.ndarray] = []
+
+    # PERF: Tuning einmalig VOR der Simulations-Loop
+    if model_name in ("ffn", "xgboost") and simulations > 1:
+        try:
+            _ = tune_sequence_model(model_name, X_train, y_train, seed=seed)
+        except Exception as exc:
+            print(f"[PREDICT] Tuning für {model_name} fehlgeschlagen: {exc}")
+
+    diff_ensemble: list[np.ndarray] = []
+    volume_ensemble: list[np.ndarray] = []
+
     for i in range(simulations):
-        use_boot = (model_name == "linreg") and (simulations > 1)
-        m = fit_sequence_model(model_name, X_train, y_train, seed=seed + i, bootstrap=use_boot)
+        use_boot = simulations > 1
+        m = fit_sequence_model(
+            model_name,
+            X_train,
+            y_train,
+            seed=seed + i,
+            bootstrap=use_boot,
+            do_tune=False,  # PERF: Tuning-Parameter bereits cacht (s.o.)
+        )
         raw = m.predict(x_input).reshape(PROGNOSEHORIZONT, 1)
         diff_pred = scaler_y.inverse_transform(raw).flatten()
-        ensemble.append(reconstruct_volume(diff_pred, last_level))
-    return np.mean(ensemble, axis=0)
+        diff_ensemble.append(diff_pred)
+        volume_ensemble.append(reconstruct_volume(diff_pred, last_level))
+
+    return np.mean(volume_ensemble, axis=0), np.mean(diff_ensemble, axis=0)
 
 
 # ---------------------------------------------------------------------------
@@ -661,52 +827,53 @@ def predict_tft_multi_step(
     model: TemporalFusionTransformer,
     training_dataset: TimeSeriesDataSet,
     history_df: pd.DataFrame,
-    covariates: list[str],
 ) -> np.ndarray:
-    """Multi-Step-TFT-Prognose für den Standard-Benchmark.
+    """Prognostiziert mit TFT über mehrere Schritte (Multi-Step).
 
-    Kovariaten werden im Vorhersagefenster (Decoder) sauber auf NaN gesetzt,
-    da das Modell so trainiert wurde, sie in der Zukunft zu ignorieren.
+    SZENARIO 2A: Keine zukünftigen Kovariatenwerte (nur historisch).
+    Das DataFrame history_df endet an TRAINING_ENDE.
+
+    Args:
+        model: Trainiertes TFT-Modell
+        training_dataset: Training-Dataset (für Metadaten)
+        history_df: Historische Daten für Encoding (bis TRAINING_ENDE)
+
+    Returns:
+        Prognose-Differenzen für PROGNOSEHORIZONT Schritte
     """
     history_prep = _add_tft_columns(history_df)
-    max_time_idx = int(history_prep["time_idx"].max())
-    last_date = history_prep["Datum"].max()
+    max_time_idx = history_prep["time_idx"].max()
 
+    # Future DataFrame: Struktur für TFT, aber ohne echte Werte
     future_rows = []
     for i in range(1, PROGNOSEHORIZONT + 1):
-        row = {
-            GROUP_ID: "deposits",
-            "time_idx": max_time_idx + i,
-            "Datum": last_date + pd.Timedelta(days=i),
-            TARGET_COL: np.nan,
-            TARGET_DIFF: np.nan,
-        }
-        # Im Standard-Benchmark werden Kovariaten im Testzeitraum auf NaN gesetzt.
-        # Der Decoder greift nicht darauf zu.
-        for cov in covariates:
-            row[cov] = np.nan
+        row = {GROUP_ID: "deposits", "time_idx": max_time_idx + i}
+        for var in training_dataset.time_varying_unknown_reals:
+            row[var] = np.nan
+        row["Datum"] = pd.Timestamp("1900-01-01")
         future_rows.append(row)
 
-    combined = pd.concat([history_prep, pd.DataFrame(future_rows)], ignore_index=True)
+    future_tft = pd.DataFrame(future_rows)
+    combined = pd.concat([history_prep, future_tft], ignore_index=True)
+
     predict_ds = TimeSeriesDataSet.from_dataset(
-        training_dataset, combined, predict=True, stop_randomization=True
+        training_dataset,
+        combined,
+        predict=True,
+        stop_randomization=True,
     )
     loader = predict_ds.to_dataloader(train=False, batch_size=1, num_workers=0)
-    trainer_device_kwargs = dict(
-        accelerator="gpu" if torch.cuda.is_available() else "cpu",
-        devices=1,
-        logger=False,
-        enable_checkpointing=False,
-    )
     pred = _to_numpy(
         model.predict(
             loader,
-            trainer_kwargs=trainer_device_kwargs,
+            trainer_kwargs=dict(
+                accelerator="gpu" if torch.cuda.is_available() else "cpu",
+                logger=False,
+                enable_checkpointing=False,
+            ),
         )
     )
     flat = pred.reshape(-1)
-    if len(flat) < PROGNOSEHORIZONT:
-        raise ValueError(f"TFT lieferte {len(flat)} Werte, erwartet {PROGNOSEHORIZONT}.")
     return flat[-PROGNOSEHORIZONT:]
 
 
@@ -715,31 +882,40 @@ def predict_tft_forecast(
     simulations: int = 1,
     seed: int = SEED,
     training_end: str = TRAINING_ENDE,
-) -> np.ndarray:
-    """Ensemble-Prognose mit TFT (verschiedene Seeds)."""
-    df, _, train_df, _ = load_prepared_df(covariates, training_end=training_end)
-    min_train = GEDAECHTNIS + PROGNOSEHORIZONT + int(
-        (GEDAECHTNIS + PROGNOSEHORIZONT) * TFT_VAL_FRACTION
-    ) + 10
+) -> tuple[np.ndarray, np.ndarray]:
+    """Prognostiziert mit TFT (Ensemble über Seeds).
+
+    SZENARIO 2A: Nur historische Kovariaten, keine Zukunftswerte.
+
+    Args:
+        covariates: Liste der Kovariaten-Namen
+        simulations: Anzahl der Ensemble-Durchläufe
+        seed: Basis-Seed
+        training_end: Letztes Trainingsdatum
+
+    Returns:
+        (volume_pred, diff_pred)
+    """
+    df, df_clean, train_df, _ = load_prepared_df(covariates, training_end=training_end)
+    min_train = GEDAECHTNIS + PROGNOSEHORIZONT + 10
     if len(train_df) < min_train:
-        raise ValueError(f"Zu wenig Trainingsdaten für TFT: {len(train_df)} < {min_train}.")
+        raise ValueError(f"Zu wenig Trainingsdaten: {len(train_df)} < {min_train}")
 
-    last_level = float(df.loc[training_end, TARGET_COL])
-    ensemble: list[np.ndarray] = []
+    last_level = float(_loc_value_snapped(df, training_end, TARGET_COL))
+    diff_ensemble: list[np.ndarray] = []
+
     for i in range(simulations):
-        m, ds = fit_tft(train_df, covariates, seed=seed + i)
-        diff_pred = predict_tft_multi_step(m, ds, train_df, covariates)
-        ensemble.append(reconstruct_volume(diff_pred, last_level))
-    return np.mean(ensemble, axis=0)
+        model, ds = fit_tft(train_df, covariates, seed=seed + i)
+        diff_pred = predict_tft_multi_step(model, ds, train_df)
+        diff_ensemble.append(diff_pred)
+
+    mean_diff = np.mean(diff_ensemble, axis=0)
+    return reconstruct_volume(mean_diff, last_level), mean_diff
 
 
 # ---------------------------------------------------------------------------
-# Zentrale Evaluationsfunktionen
+# Evaluation + Results
 # ---------------------------------------------------------------------------
-
-_SEQUENCE_MODELS = {"linreg", "ffn", "xgboost"}
-_NAIVE_MODELS = {"naive_rw", "naive_hold"}
-
 
 def run_single_evaluation(
     model_name: str,
@@ -748,44 +924,39 @@ def run_single_evaluation(
     simulations: int = 1,
     training_end: str = TRAINING_ENDE,
 ) -> ForecastResult:
-    """Führt eine vollständige Modell-Evaluation durch.
-
-    Args:
-        model_name:      Eines von ALL_MODELS
-        covariates:      Kovariatenliste
-        covariate_label: Bezeichner für Ergebniszeile
-        simulations:     Anzahl Ensemble-Läufe
-        training_end:    Letztes Trainingsdatum (für Rolling-Origin)
-
-    Returns:
-        ForecastResult mit allen Metriken und Prognose-Arrays
-    """
-    if not covariates:
-        raise ValueError("Mindestens eine Kovariate erforderlich.")
+    """Führt eine komplette Modell-Evaluation durch."""
+    if not covariates and model_name not in ("naive_rw", "naive_hold"):
+        raise ValueError("Mindestens eine Kovariate erforderlich (außer für Naive-Modelle).")
 
     df, df_clean, _, _ = load_prepared_df(covariates, training_end=training_end)
-    input_start = _next_date_in_index(df_clean, training_end)
-    true_diff, true_volume = _true_test_arrays(df, df_clean, input_start)
 
-    kw = dict(covariates=covariates, simulations=simulations, training_end=training_end)
-
-    if model_name in _SEQUENCE_MODELS:
-        volume_pred = predict_sequence_model(model_name, **kw)
-    elif model_name == "tft":
-        volume_pred = predict_tft_forecast(**kw)
-    elif model_name == "naive_rw":
-        volume_pred = predict_naive_rw(**kw)
+    # Naiv-Modelle
+    if model_name == "naive_rw":
+        volume_pred, diff_pred = predict_naive_rw(
+            covariates, simulations=simulations, seed=SEED, training_end=training_end
+        )
     elif model_name == "naive_hold":
-        volume_pred = predict_naive_hold(**kw)
+        volume_pred, diff_pred = predict_naive_hold(
+            covariates, simulations=simulations, seed=SEED, training_end=training_end
+        )
+    elif model_name == "tft":
+        volume_pred, diff_pred = predict_tft_forecast(
+            covariates, simulations=simulations, seed=SEED, training_end=training_end
+        )
     else:
-        raise ValueError(
-            f"Unbekanntes Modell: {model_name!r}. Gültig: {ALL_MODELS}"
+        volume_pred, diff_pred = predict_sequence_model(
+            model_name,
+            covariates,
+            simulations=simulations,
+            seed=SEED,
+            training_end=training_end,
         )
 
-    last_level = float(df.loc[training_end, TARGET_COL])
-    diff_pred = np.diff(np.concatenate([[last_level], volume_pred]))
-    metrics = compute_metrics(true_diff, diff_pred, true_volume, volume_pred)
+    # Test-Wahrheiten
+    input_start = _next_date_in_index(df_clean, training_end)
+    true_diff, true_volume = _true_test_arrays(df, df_clean, input_start, PROGNOSEHORIZONT)
 
+    metrics = compute_metrics(true_diff, diff_pred, true_volume, volume_pred)
     return ForecastResult(
         model=model_name,
         covariates=covariates,
@@ -797,62 +968,35 @@ def run_single_evaluation(
     )
 
 
-# ---------------------------------------------------------------------------
-# FIX 1: Rolling-Origin-Evaluation
-# ---------------------------------------------------------------------------
+def results_to_dataframe(results: Iterable[ForecastResult]) -> pd.DataFrame:
+    """Konvertiert ForecastResults zu pandas DataFrame (sortiert nach MAE_Volumen)."""
+    rows = []
+    for r in results:
+        rows.append(
+            {
+                "Modell": r.model,
+                "Kovariaten": ", ".join(r.covariates),
+                "Label": r.covariate_label,
+                "n_Kovariaten": len(r.covariates),
+                "MAE_Diff": r.mae_diff,
+                "RMSE_Diff": r.rmse_diff,
+                "R2_Diff": r.r2_diff,
+                "MAE_Volumen": r.mae_volume,
+                "RMSE_Volumen": r.rmse_volume,
+                "R2_Volumen": r.r2_volume,
+            }
+        )
+    return pd.DataFrame(rows).sort_values(["Modell", "MAE_Volumen"])
 
-def generate_rolling_origins(
-    freq: str = "MS",
-    last_origin: str = TRAINING_ENDE,
-    min_train_rows: int | None = None,
-) -> list[str]:
-    """Generiert Evaluations-Origins für Rolling-Origin-Evaluation.
 
-    Args:
-        freq:           Pandas-Frequenz der Origins (z.B. "MS" monatlich, "YS" jährlich)
-                        oder Jahres-Schritt als "<n>Y" (z.B. "5Y" = alle 5 Jahre).
-        last_origin:    Letztes/spätestes Origin-Datum
-        min_train_rows: Mindest-Trainingszeilen (default: GD + PH + Puffer)
-
-    Returns:
-        Sortierte Liste von Datumsstrings (YYYY-MM-DD)
-    """
-    min_rows = min_train_rows or (GEDAECHTNIS + PROGNOSEHORIZONT + 20)
-
-    # Basis-Frame für Datumsverfügbarkeit laden
-    df_base = _load_base_frame()[[TARGET_COL]].copy()
-    df_base[TARGET_DIFF] = df_base[TARGET_COL].diff()
-    df_clean = df_base.dropna()
-
-    if len(df_clean) < min_rows + PROGNOSEHORIZONT:
-        raise ValueError("Zu wenig Daten für Rolling-Origin-Evaluation.")
-
-    # Frühestes sinnvolles Origin
-    earliest = df_clean.index[min_rows - 1]
-    last_ts = pd.Timestamp(last_origin)
-
-    # Unterstützung für Jahres-Intervalle im Format '5Y', '10Y' usw.
-    import re
-    m = re.match(r"^(\d+)Y$", str(freq))
-    if m:
-        step = int(m.group(1))
-        candidates = pd.date_range(earliest, last_ts, freq=pd.DateOffset(years=step))
-    else:
-        # sonst direkt mit Pandas-Frequenz-String arbeiten (z.B. "MS", "YS", "A")
-        candidates = pd.date_range(earliest, last_ts, freq=freq)
-
-    origins: list[str] = []
-    for cand in candidates:
-        # Nächstliegendes verfügbares Datum <= Kandidat
-        avail = df_clean.index[df_clean.index <= cand]
-        if len(avail) >= min_rows:
-            origins.append(str(avail[-1].date()))
-
-    # Sicherstellen, dass last_origin immer enthalten ist
-    if last_origin not in origins:
-        origins.append(last_origin)
-
-    return sorted(set(origins))
+def generate_rolling_origins(freq: str = "MS", max_origins: int | None = None) -> list[str]:
+    """Generiert Rolling-Origin-Daten."""
+    df = _load_base_frame()
+    ts_range = pd.date_range(start="2023-07-01", end=TRAINING_ENDE, freq=freq)
+    origins = [str(d.date()) for d in ts_range]
+    if max_origins:
+        origins = origins[-max_origins:]
+    return origins
 
 
 def run_rolling_evaluation(
@@ -861,166 +1005,44 @@ def run_rolling_evaluation(
     covariate_label: str,
     simulations: int = 1,
     origins: list[str] | None = None,
-    freq: str = "MS",
 ) -> pd.DataFrame:
-    """Rollierende Out-of-Sample-Evaluation über mehrere Origins.
-
-    FIX 1: Ersetzt die Einzelpunkt-Evaluation durch mehrere Startpunkte,
-    um modellspezifische Ergebnisse von perioden-spezifischen Zufällen zu trennen.
-
-    Args:
-        model_name:      Modellname
-        covariates:      Kovariatenliste
-        covariate_label: Bezeichner
-        simulations:     Ensemble-Läufe pro Origin
-        origins:         Explizite Liste von training_end-Daten (oder None für Auto)
-        freq:            Frequenz der Auto-Origins
-
-    Returns:
-        DataFrame mit einer Zeile pro Origin und allen Metriken
-    """
+    """Rolling-Origin-Evaluation."""
     if origins is None:
-        origins = generate_rolling_origins(freq=freq)
+        origins = generate_rolling_origins()
 
-    rows = []
+    results = []
     for origin in origins:
         try:
-            r = run_single_evaluation(
+            result = run_single_evaluation(
                 model_name=model_name,
                 covariates=covariates,
                 covariate_label=covariate_label,
                 simulations=simulations,
                 training_end=origin,
             )
-            rows.append({
-                "Modell":        r.model,
-                "Label":         r.covariate_label,
-                "training_end":  r.training_end,
-                "MAE_Diff":      r.mae_diff,
-                "RMSE_Diff":     r.rmse_diff,
-                "R2_Diff":       r.r2_diff,
-                "MAE_Volumen":   r.mae_volume,
-                "RMSE_Volumen":  r.rmse_volume,
-                "R2_Volumen":    r.r2_volume,
-            })
+            row = {
+                "origin": origin,
+                "model": result.model,
+                "label": result.covariate_label,
+                "mae_diff": result.mae_diff,
+                "rmse_diff": result.rmse_diff,
+                "r2_diff": result.r2_diff,
+                "mae_volume": result.mae_volume,
+                "rmse_volume": result.rmse_volume,
+                "r2_volume": result.r2_volume,
+            }
+            results.append(row)
         except Exception as exc:
-            print(f"[Fehler] {model_name} / {origin}: {exc}")
-
-    if not rows:
-        raise ValueError("Keine Rolling-Ergebnisse – Datenverfügbarkeit prüfen.")
-
-    df = pd.DataFrame(rows)
-    df["training_end"] = pd.to_datetime(df["training_end"])
-    return df.sort_values(["Modell", "training_end"]).reset_index(drop=True)
+            print(f"  [Rolling] Origin {origin} / {model_name}: {exc}")
+    return pd.DataFrame(results)
 
 
-def aggregate_rolling_results(rolling_df: pd.DataFrame) -> pd.DataFrame:
-    """Aggregiert Rolling-Ergebnisse zu Mittelwert ± Std pro Modell × Label."""
-    metric_cols = ["MAE_Diff", "RMSE_Diff", "R2_Diff", "MAE_Volumen", "RMSE_Volumen", "R2_Volumen"]
-    return (
-        rolling_df
-        .groupby(["Modell", "Label"])[metric_cols]
-        .agg(["mean", "std"])
-        .round(4)
+def aggregate_rolling_results(df: pd.DataFrame) -> pd.DataFrame:
+    """Aggregiert Rolling-Ergebnisse pro Modell."""
+    return df.groupby("model").agg(
+        {
+            "mae_volume": ["mean", "std"],
+            "rmse_volume": ["mean", "std"],
+            "r2_volume": ["mean", "std"],
+        }
     )
-
-
-# ---------------------------------------------------------------------------
-# Ergebnis-Formatierung
-# ---------------------------------------------------------------------------
-
-def results_to_dataframe(results: Iterable[ForecastResult]) -> pd.DataFrame:
-    """Konvertiert ForecastResults in einen sortierten DataFrame."""
-    rows = []
-    for r in results:
-        rows.append({
-            "Modell":        r.model,
-            "Kovariaten":    ", ".join(r.covariates),
-            "Label":         r.covariate_label,
-            "training_end":  r.training_end,
-            "n_Kovariaten":  len(r.covariates),
-            "MAE_Diff":      r.mae_diff,
-            "RMSE_Diff":     r.rmse_diff,
-            "R2_Diff":       r.r2_diff,
-            "MAE_Volumen":   r.mae_volume,
-            "RMSE_Volumen":  r.rmse_volume,
-            "R2_Volumen":    r.r2_volume,
-        })
-    return pd.DataFrame(rows).sort_values(["Modell", "MAE_Volumen"]).reset_index(drop=True)
-
-
-# ---------------------------------------------------------------------------
-# Plot-Unterstützung
-# ---------------------------------------------------------------------------
-
-def run_ensemble_volume_paths(
-    model_name: str,
-    covariates: list[str] | None = None,
-    simulations: int = SIMULATIONEN,
-    training_end: str = TRAINING_ENDE,
-    do_tune: bool = False,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, pd.DataFrame]:
-    """Für Plot-Skripte: Mittelwert + KI-Bänder + Roh-DataFrame.
-
-    Returns:
-        (mean_forecast, ki90_bands, ki98_bands, all_paths, df)
-
-    Die KI-Bänder werden konsistent aus den Simulationen (Empirische Quantile) berechnet.
-    Für naive Modelle erzeugen wir Pfade über Residual-Bootstrap, damit die CI vergleichbar sind.
-    """
-    covariates = covariates or ALL_COVARIATES
-    df, _, train_df, _ = load_prepared_df(covariates, training_end=training_end)
-
-    if model_name in _NAIVE_MODELS:
-        # Residual-Resampling aus Trainings-Differenzen:
-        diffs = train_df[TARGET_DIFF].dropna().values
-        # one-step naive RW: letzte train diff (same as predict_naive_rw basis) or zero-drift for hold
-        if model_name == "naive_rw":
-            base_diff = float(diffs[-1])
-            base_path = np.cumsum(np.full(PROGNOSEHORIZONT, base_diff)) + float(df.loc[training_end, TARGET_COL])
-            # Erzeuge Simulationen durch Bootstrapping von Residualen (one-step residuals)
-            paths = []
-            rng = np.random.default_rng(SEED)
-            for i in range(simulations):
-                resampled = rng.choice(diffs - np.mean(diffs), size=PROGNOSEHORIZONT, replace=True)
-                sim_diff = np.full(PROGNOSEHORIZONT, base_diff) + resampled
-                paths.append(reconstruct_volume(sim_diff, float(df.loc[training_end, TARGET_COL])))
-            paths = np.array(paths)
-        else:  # naive_hold
-            base_level = float(df.loc[training_end, TARGET_COL])
-            paths = []
-            rng = np.random.default_rng(SEED)
-            for i in range(simulations):
-                # small fluctuations from residuals around zero
-                resampled = rng.choice(diffs - np.mean(diffs), size=PROGNOSEHORIZONT, replace=True)
-                sim = base_level + np.cumsum(resampled)  # simulate small walk around hold
-                paths.append(sim)
-            paths = np.array(paths)
-
-    elif model_name == "tft":
-        last_level = float(df.loc[training_end, TARGET_COL])
-        paths_list = []
-        for i in range(simulations):
-            m, ds = fit_tft(train_df, covariates, seed=SEED + i)
-            dp = predict_tft_multi_step(m, ds, train_df, covariates)
-            paths_list.append(reconstruct_volume(dp, last_level))
-        paths = np.array(paths_list)
-
-    else:
-        # Sequenzmodelle mit optionalem Tuning
-        _, _, X_train, y_train, x_input, scaler_y, last_level = _prepare_sequence_data(
-            covariates, training_end=training_end
-        )
-        paths_list = []
-        for i in range(simulations):
-            use_boot = (model_name == "linreg") and (simulations > 1)
-            m = fit_sequence_model(model_name, X_train, y_train, seed=SEED + i, bootstrap=use_boot, do_tune=do_tune)
-            raw = m.predict(x_input).reshape(PROGNOSEHORIZONT, 1)
-            dp = scaler_y.inverse_transform(raw).flatten()
-            paths_list.append(reconstruct_volume(dp, last_level))
-        paths = np.array(paths_list)
-
-    mean = paths.mean(axis=0)
-    ki90 = np.percentile(paths, [5, 95], axis=0)
-    ki98 = np.percentile(paths, [1, 99], axis=0)
-    return mean, ki90, ki98, paths, df

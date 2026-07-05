@@ -1,0 +1,13 @@
+from treesearch_plot import plot_forecast
+
+
+def main():
+    plot_forecast(
+        model_label="TFT",
+        model_name="tft",
+        title_suffix="TFT",
+    )
+
+
+if __name__ == "__main__":
+    main()

@@ -38,6 +38,24 @@ def parse_args():
         help="PNG-Pfad (default: forecast_{modell}_{label}.png)",
     )
     parser.add_argument("--show", action="store_true", help="Plot anzeigen statt nur speichern")
+    parser.add_argument(
+        "--lags",
+        action="store_true",
+        help="Verzögerte Kovariaten-Features verwenden (Punkt 1, siehe common.LAG_STEPS).",
+    )
+    parser.add_argument(
+        "--tune",
+        action="store_true",
+        help="Einheitliches GridSearchCV-Tuning aktivieren (Punkt 3, siehe common.TUNING_BUDGET).",
+    )
+    parser.add_argument(
+        "--tft-baseline",
+        action="store_true",
+        help=(
+            "Nur für --modell tft: ursprüngliche Baseline-Variante ohne "
+            "time_varying_known_reals verwenden (siehe Punkt 6)."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -54,6 +72,9 @@ def main():
         covariates=covariates,
         simulations=args.simulationen,
         save_path=None if args.show else out,
+        use_lags=args.lags,
+        do_tune=args.tune,
+        use_calendar_known_reals=not args.tft_baseline,
     )
     if not args.show:
         print(f"Plot gespeichert: {out}")

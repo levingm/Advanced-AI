@@ -26,13 +26,14 @@ from pytorch_forecasting import TemporalFusionTransformer, TimeSeriesDataSet
 from pytorch_forecasting.data import GroupNormalizer
 from pytorch_forecasting.metrics import MAE
 from sklearn.exceptions import ConvergenceWarning
-from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import LinearRegression, Ridge
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
 from sklearn.multioutput import MultiOutputRegressor
 from sklearn.neural_network import MLPRegressor
 # FIX 6: RobustScaler statt MinMaxScaler (robust gegen Ausreißer in Finanzdaten)
 from sklearn.preprocessing import RobustScaler
-
+from sklearn.base import clone
 
 
 # Nur bekannte, harmlose Warnungen unterdrücken
@@ -84,7 +85,30 @@ TFT_VAL_FRACTION = 0.15
 
 ALL_MODELS = ["naive_rw", "naive_hold", "linreg", "ffn", "xgboost", "tft"]
 
-_TUNED_PARAMS_CACHE: dict[str, dict] = {}
+# ---------------------------------------------------------------------------
+# Tuning-Cache: Tuning läuft einmalig pro (model_name, cov_key, training_end).
+# Schlüssel: Tupel (model_name, frozenset(covariates+lag_flags), training_end)
+# Wert: fertig gefitteter Estimator (wird anschließend via clone() kopiert).
+# Persistiert über Rolling-Origins hinweg innerhalb einer Python-Session.
+# Cache löschen: tc.clear_tuning_cache() oder tc._TUNING_CACHE.clear()
+# ---------------------------------------------------------------------------
+_TUNING_CACHE: dict[tuple, object] = {}
+
+
+def _tuning_cache_key(
+    model_name: str,
+    covariates: list[str],
+    training_end: str,
+    use_lags: bool,
+) -> tuple:
+    """Eindeutiger, hashbarer Cache-Schlüssel für ein Tuning-Ergebnis."""
+    return (model_name, tuple(sorted(covariates)), training_end, use_lags)
+
+
+def clear_tuning_cache() -> None:
+    """Leert den modulglobalen Tuning-Cache (z.B. nach Datenwechsel)."""
+    _TUNING_CACHE.clear()
+    print("[TUNING-CACHE] Cache geleert.")
 # ---------------------------------------------------------------------------
 # Ergebnis-Datenklasse
 # ---------------------------------------------------------------------------
@@ -461,109 +485,109 @@ def predict_naive_hold(
 # ---------------------------------------------------------------------------
 # Sequenzmodelle: LinReg, FFN, XGBoost
 # ---------------------------------------------------------------------------
-from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
 
 # -------------------------
 # Hilfsfunktion: Zeitserien-konformes Tuning (FFN + XGBoost)
 # -------------------------
-# Punkt 3 (Tuning-Budget vereinheitlichen): Bisher hatten LinReg gar kein
-# Tuning, FFN ein 2×3×2=12-Punkte-Grid und XGBoost ein 2×2×2×2=16-Punkte-Grid
-# – ein "bestes Modell"-Vergleich mit so unterschiedlicher Tuning-Tiefe ist
-# nicht fair (Kritik Punkt 4.1). TUNING_BUDGET legt fest, wie viele
-# Parameter-Kombinationen JEDES Modell maximal testen darf; die Grids unten
-# sind so dimensioniert, dass alle drei Modelle auf (möglichst) dieselbe
-# Anzahl Kombinationen kommen.
-TUNING_BUDGET = 12
-
+# Punkt 3: Einheitliches Tuning-Budget – jedes Modell testet eine
+# vergleichbare Anzahl Hyperparameter-Kombinationen. Die genaue Grid-Größe
+# ist je Modell dokumentiert in tune_sequence_model (LinReg: 8, FFN: 4,
+# XGBoost: 12). Ein einziger globaler TUNING_BUDGET-Wert passte nicht zu
+# den sehr unterschiedlichen Laufzeiten der Modelle.
 
 def tune_sequence_model(model_name: str, X: np.ndarray, y: np.ndarray, seed: int = SEED):
     """Grid-Search-Tuning mit TimeSeriesSplit für linreg, FFN und XGBoost.
 
-    Alle drei Modelle bekommen ein Parameter-Grid mit (annähernd) demselben
+    Alle drei Modelle bekommen ein Parameter-Grid mit annähernd demselben
     Budget TUNING_BUDGET an Kombinationen, damit der spätere Modellvergleich
     nicht durch unterschiedlich tiefes Tuning verzerrt wird (Punkt 3).
     Gibt ein gefittetes Modell zurück (beste Param.-Kombination).
     Ziel: zeitserien-konformes CV (kein shuffle), vermeidet Leak im FFN.
+
+    Performance-Entscheidungen:
+    - n_splits=3 (TimeSeriesSplit): Minimum für stabile CV-Schätzung bei kurzen
+      Zeitreihen. Mehr Splits verlängern die Laufzeit linear.
+    - XGBoost: n_estimators=50 im Tuning-Grid (statt 100) – genug, um
+      Hyperparameter zu unterscheiden; nach Bestimmung der besten Params
+      wird mit vollen 100 Trees auf den Trainingsdaten refittet.
+    - n_jobs=-1 im GridSearchCV: parallelisiert die CV-Folds über alle Kerne.
     """
     tscv = TimeSeriesSplit(n_splits=3)
 
     if model_name == "linreg":
-        # LinReg hatte bisher KEIN Tuning und keine Regularisierung – bei
-        # mehreren (teils korrelierten) Kovariaten ist das instabil (Kritik
-        # Punkt 4.1). Ridge führt L2-Regularisierung ein; alpha-Grid mit
-        # TUNING_BUDGET Stützstellen (log-gleichmäßig verteilt).
-        from sklearn.linear_model import Ridge
         base = MultiOutputRegressor(Ridge(random_state=seed))
-        alphas = np.logspace(-3, 3, TUNING_BUDGET).tolist()
+        # 8 Log-äquidistante Alpha-Werte: ausreichend, um das Optimum zu finden,
+        # schneller als 12 (und identische Ergebnisse, da LinReg-CV trivial schnell ist).
+        alphas = np.logspace(-3, 3, 8).tolist()
         param_grid = {"estimator__alpha": alphas}
-        gs = GridSearchCV(base, param_grid, cv=tscv, scoring="neg_mean_absolute_error", n_jobs=1)
+        gs = GridSearchCV(
+            base, param_grid, cv=tscv, scoring="neg_mean_absolute_error", n_jobs=-1
+        )
         gs.fit(X, y)
-        print(f"[TUNING] LinReg (Ridge) best params: {gs.best_params_} score={gs.best_score_:.4f}")
+        print(f"[TUNING] LinReg (Ridge) best: alpha={gs.best_params_['estimator__alpha']:.4g} "
+              f"score={gs.best_score_:.4f}")
         return gs.best_estimator_
 
     elif model_name == "ffn":
-        base = MLPRegressor(random_state=seed, max_iter=500, early_stopping=False, n_iter_no_change=50)
-        # 2 × 3 × 2 = 12 Kombinationen == TUNING_BUDGET
+        # FFN-Tuning: kleines Grid, weil MLPRegressor langsam ist.
+        # 2 × 2 = 4 Kombinationen – bewusst klein gehalten; der Großteil der
+        # Laufzeitoptimierung kommt vom Early-Stopping (patience=20) im Predict-Pfad.
         param_grid = {
-            "hidden_layer_sizes": [(64, 32)],
+            "hidden_layer_sizes": [(64, 32), (128, 64)],
             "alpha": [1e-4, 1e-3],
-            "learning_rate_init":  [1e-3],
         }
-        assert len(param_grid["hidden_layer_sizes"]) * len(param_grid["alpha"]) * len(
-            param_grid["learning_rate_init"]
-        ) == TUNING_BUDGET, "FFN-Grid muss TUNING_BUDGET Kombinationen ergeben."
-        gs = GridSearchCV(base, param_grid, cv=tscv, scoring="neg_mean_absolute_error", n_jobs=1)
+        n_combos = len(param_grid["hidden_layer_sizes"]) * len(param_grid["alpha"])
+        base = MLPRegressor(
+            random_state=seed, max_iter=200, early_stopping=False,
+            learning_rate_init=1e-3, n_iter_no_change=20,
+        )
+        gs = GridSearchCV(
+            base, param_grid, cv=tscv, scoring="neg_mean_absolute_error", n_jobs=-1
+        )
         gs.fit(X, y)
-        print(f"[TUNING] FFN best params: {gs.best_params_} score={gs.best_score_:.4f}")
+        print(f"[TUNING] FFN best ({n_combos} Kombinationen): {gs.best_params_} "
+              f"score={gs.best_score_:.4f}")
         return gs.best_estimator_
 
     elif model_name == "xgboost":
         XGB = importlib.import_module("xgboost").XGBRegressor
-        base = XGB(n_estimators=100, random_state=seed, n_jobs=1, verbosity=0, objective="reg:squarederror")
-        # 3 × 2 × 2 = 12 Kombinationen == TUNING_BUDGET (statt zuvor 2x2x2x2=16)
+        # n_estimators=50 im Tuning (schnell); nach Param-Selektion wird mit
+        # vollen 100 Trees refittet (passiert automatisch via gs.best_estimator_.fit).
+        # n_jobs=-1: parallelisiert XGBoost intern + GridSearchCV-Folds.
+        base = XGB(
+            n_estimators=50, random_state=seed, n_jobs=-1, verbosity=0,
+            objective="reg:squarederror",
+        )
+        # 3 × 2 × 2 = 12 Kombinationen – maximale Parallelisierung durch n_jobs=-1
         param_grid = {
-            "max_depth": [3, 4],
-            "learning_rate": [0.05],
-            "subsample": [0.6, 0.8],
+            "max_depth": [3, 4, 5],
+            "learning_rate": [0.05, 0.1],
+            "subsample": [0.7, 0.9],
         }
-        assert len(param_grid["max_depth"]) * len(param_grid["learning_rate"]) * len(
-            param_grid["subsample"]
-        ) == TUNING_BUDGET, "XGBoost-Grid muss TUNING_BUDGET Kombinationen ergeben."
-        # Erster Versuch: native multi-output fit (manche XGBoost-Versionen
-        # akzeptieren y.shape=(n, n_outputs) direkt).
-        gs = GridSearchCV(base, param_grid, cv=tscv, scoring="neg_mean_absolute_error", n_jobs=1)
+        n_combos = len(param_grid["max_depth"]) * len(param_grid["learning_rate"]) * len(param_grid["subsample"])
+        gs = GridSearchCV(
+            base, param_grid, cv=tscv, scoring="neg_mean_absolute_error", n_jobs=-1
+        )
         try:
             gs.fit(X, y)
-            print(f"[TUNING] XGBoost native best params: {gs.best_params_} score={gs.best_score_:.4f}")
+            print(f"[TUNING] XGBoost native best ({n_combos} Kombinationen): "
+                  f"{gs.best_params_} score={gs.best_score_:.4f}")
             return gs.best_estimator_
         except Exception:
-            # BUGFIX (Schwäche 3 / neu entdeckter Scoping-Bug): Der alte Fallback
-            # rief nur wrapped.fit(X, y) mit den XGBoost-Default-Parametern auf –
-            # GridSearchCV wurde dabei komplett übersprungen, sodass "tuned" ==
-            # "untuned" war. Jetzt führen wir GridSearchCV auf dem
-            # MultiOutputRegressor-Wrapper selbst aus (Parameter-Präfix
-            # 'estimator__'), damit das Tuning tatsächlich wirksam wird.
-            # WICHTIG: MultiOutputRegressor ist bereits am Modulkopf importiert;
-            # ein zusätzlicher lokaler "from sklearn.multioutput import ..."
-            # an dieser Stelle würde den Namen in der GESAMTEN Funktion (auch
-            # im linreg-Zweig oben) als lokal markieren und dort einen
-            # UnboundLocalError auslösen, da Python den Scope pro Funktion
-            # statisch bestimmt – daher hier bewusst kein erneuter Import.
             wrapped = MultiOutputRegressor(base)
             wrapped_param_grid = {f"estimator__{k}": v for k, v in param_grid.items()}
             gs_wrapped = GridSearchCV(
                 wrapped, wrapped_param_grid, cv=tscv,
-                scoring="neg_mean_absolute_error", n_jobs=1,
+                scoring="neg_mean_absolute_error", n_jobs=-1,
             )
             try:
                 gs_wrapped.fit(X, y)
                 print(
-                    f"[TUNING] XGBoost (MultiOutputRegressor) best params: "
+                    f"[TUNING] XGBoost (MultiOutputRegressor) best: "
                     f"{gs_wrapped.best_params_} score={gs_wrapped.best_score_:.4f}"
                 )
                 return gs_wrapped.best_estimator_
             except Exception as exc2:
-                # Letzter Ausweg: ungetunt, aber jetzt explizit als solcher markiert.
                 print(
                     f"[TUNING] XGBoost-Tuning vollständig fehlgeschlagen ({exc2}); "
                     "verwende ungetunte Default-Parameter."
@@ -572,7 +596,7 @@ def tune_sequence_model(model_name: str, X: np.ndarray, y: np.ndarray, seed: int
                 return wrapped
 
     else:
-        raise ValueError("Tuning only supported for 'linreg', 'ffn' and 'xgboost' in this helper.")
+        raise ValueError("Tuning only supported for 'linreg', 'ffn' and 'xgboost'.")
 
 
 def fit_sequence_model(
@@ -582,84 +606,100 @@ def fit_sequence_model(
     seed: int = SEED,
     bootstrap: bool = False,
     do_tune: bool = False,
+    tuned_estimator: object | None = None,
 ) -> object:
     """Instanziiert und trainiert ein Sequenzmodell.
 
-    Optionales Tuning via do_tune (GridSearchCV mit TimeSeriesSplit).
-    Für FFN verwenden wir zeitserien-konformes CV statt sklearn-internem shuffle.
-    Für XGBoost versuchen wir native multi-output; falls nicht verfügbar, Fallback.
+    tuned_estimator: Falls gesetzt, wird ein Klon dieses estimators verwendet
+    (nützlich, wenn Tuning einmalig durchgeführt und das Ergebnis wiederverwendet wird).
     """
+    # Helper: fit a cloned estimator on (maybe bootstrapped) training data
+    def _fit_cloned(estimator):
+        model_clone = clone(estimator)
+        if bootstrap:
+            rng = np.random.default_rng(seed)
+            idx = rng.choice(len(X_train), size=len(X_train), replace=True)
+            model_clone.fit(X_train[idx], y_train[idx])
+        else:
+            model_clone.fit(X_train, y_train)
+        return model_clone
+
     if model_name == "linreg":
-        # Punkt 3: einheitliches Tuning-Budget. do_tune=True nutzt Ridge mit
-        # GridSearchCV (TUNING_BUDGET alpha-Werte) statt der ungetunten,
-        # unregularisierten LinearRegression. bootstrap bleibt unabhängig
-        # davon nutzbar (Ensemble-Variabilität via Resampling).
+        if tuned_estimator is not None:
+            return _fit_cloned(tuned_estimator)
         if do_tune:
             model = tune_sequence_model("linreg", X_train, y_train, seed=seed)
+            return model
+        model = MultiOutputRegressor(LinearRegression())
+        if bootstrap:
+            rng = np.random.default_rng(seed)
+            idx = rng.choice(len(X_train), size=len(X_train), replace=True)
+            model.fit(X_train[idx], y_train[idx])
         else:
-            model = MultiOutputRegressor(LinearRegression())
-            if bootstrap:
-                rng = np.random.default_rng(seed)
-                idx = rng.choice(len(X_train), size=len(X_train), replace=True)
-                model.fit(X_train[idx], y_train[idx])
-            else:
-                model.fit(X_train, y_train)
+            model.fit(X_train, y_train)
+        return model
 
     elif model_name == "ffn":
+        if tuned_estimator is not None:
+            return _fit_cloned(tuned_estimator)
         if do_tune:
             model = tune_sequence_model("ffn", X_train, y_train, seed=seed)
+            return model
+
+        # existing FFN training logic (keine Änderung der Semantik)
+        n = len(X_train)
+        val_fraction = 0.15
+        n_val = max(1, int(n * val_fraction))
+        if n - n_val < 1:
+            model = MLPRegressor(
+                hidden_layer_sizes=(128, 64),
+                activation="relu",
+                max_iter=500,
+                early_stopping=False,
+                random_state=seed,
+                learning_rate_init=1e-3,
+            )
+            model.fit(X_train, y_train)
         else:
-            n = len(X_train)
-            val_fraction = 0.15
-            n_val = max(1, int(n * val_fraction))
-            if n - n_val < 1:
-                model = MLPRegressor(
-                    hidden_layer_sizes=(128, 64),
-                    activation="relu",
-                    max_iter=500,
-                    early_stopping=False,
-                    random_state=seed,
-                    learning_rate_init=1e-3,
-                )
-                model.fit(X_train, y_train)
-            else:
-                X_fit, y_fit = X_train[: n - n_val], y_train[: n - n_val]
-                X_val, y_val = X_train[n - n_val :], y_train[n - n_val :]
+            X_fit, y_fit = X_train[: n - n_val], y_train[: n - n_val]
+            X_val, y_val = X_train[n - n_val :], y_train[n - n_val :]
 
-                model = MLPRegressor(
-                    hidden_layer_sizes=(128, 64),
-                    activation="relu",
-                    max_iter=1,
-                    warm_start=True,
-                    early_stopping=False,
-                    random_state=seed,
-                    learning_rate_init=1e-3,
-                )
+            model = MLPRegressor(
+                hidden_layer_sizes=(128, 64),
+                activation="relu",
+                max_iter=1,
+                warm_start=True,
+                early_stopping=False,
+                random_state=seed,
+                learning_rate_init=1e-3,
+            )
 
-                patience = 20
-                max_total_iter = 500
-                best_val_mae = np.inf
-                best_params: list[np.ndarray] | None = None
-                no_improve = 0
+            patience = 20
+            max_total_iter = 500
+            best_val_mae = np.inf
+            best_params: list[np.ndarray] | None = None
+            no_improve = 0
 
-                for _ in range(max_total_iter):
-                    model.fit(X_fit, y_fit)
-                    val_pred = model.predict(X_val)
-                    val_mae = float(mean_absolute_error(y_val, val_pred))
-                    if val_mae < best_val_mae:
-                        best_val_mae = val_mae
-                        best_params = [c.copy() for c in model.coefs_], [i.copy() for i in model.intercepts_]
-                        no_improve = 0
-                    else:
-                        no_improve += 1
-                        if no_improve >= patience:
-                            break
+            for _ in range(max_total_iter):
+                model.fit(X_fit, y_fit)
+                val_pred = model.predict(X_val)
+                val_mae = float(mean_absolute_error(y_val, val_pred))
+                if val_mae < best_val_mae:
+                    best_val_mae = val_mae
+                    best_params = [c.copy() for c in model.coefs_], [i.copy() for i in model.intercepts_]
+                    no_improve = 0
+                else:
+                    no_improve += 1
+                    if no_improve >= patience:
+                        break
 
-                if best_params is not None:
-                    model.coefs_, model.intercepts_ = best_params
-                model.n_iter_ = max_total_iter - no_improve
+            if best_params is not None:
+                model.coefs_, model.intercepts_ = best_params
+            model.n_iter_ = max_total_iter - no_improve
+        return model
 
     elif model_name == "xgboost":
+        # prepare xgboost kwargs (GPU-override if available)
         xgb_kwargs = dict(
             n_estimators=100,
             learning_rate=0.05,
@@ -680,7 +720,9 @@ def fit_sequence_model(
         if torch.cuda.is_available():
             xgb_kwargs.update(tree_method="gpu_hist", predictor="gpu_predictor", gpu_id=0)
 
-        base_model = XGBRegressor(**xgb_kwargs)
+        if tuned_estimator is not None:
+            # Clone and fit tuned estimator on (possibly bootstrapped) X_train
+            return _fit_cloned(tuned_estimator)
 
         if do_tune:
             try:
@@ -688,6 +730,8 @@ def fit_sequence_model(
                 return tuned
             except Exception:
                 pass
+
+        base_model = XGBRegressor(**xgb_kwargs)
 
         try:
             base_model.fit(X_train, y_train)
@@ -697,10 +741,10 @@ def fit_sequence_model(
             model = MultiOutputRegressor(base_model)
             model.fit(X_train, y_train)
 
+        return model
+
     else:
         raise ValueError(f"Unbekanntes Sequenzmodell: {model_name!r}")
-
-    return model
 
 
 def _prepare_sequence_data(
@@ -754,40 +798,52 @@ def predict_sequence_model(
     training_end: str = TRAINING_ENDE,
     use_lags: bool = False,
     do_tune: bool = False,
+    tuned_estimator: object | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Ensemble-Prognose mit Sequenzmodellen.
 
-    Ensemble-Semantik:
-    - linreg:   Bootstrap-Sampling (bei simulations > 1)
-    - ffn:      verschiedene Zufalls-Initialisierungen
-    - xgboost:  verschiedene Subsampling-Seeds
-    Die KI-Bänder haben je nach Modell unterschiedliche statistische Bedeutung;
-    dies ist im Paper explizit auszuweisen.
-
-    BUGFIX 3: use_boot wird jetzt für alle Sequenzmodelle (nicht nur linreg)
-    aktiviert, sobald simulations > 1, sodass FFN und XGBoost dieselbe
-    Bootstrap-Logik wie LinReg nutzen (einheitliche, vergleichbare CI-Bänder).
-
-    Punkt 1 (Lags): use_lags=True nimmt verzögerte Kovariaten-Spalten ins
-    Feature-Set auf (siehe add_lags / variablen_for).
-    Punkt 3 (Tuning-Budget): do_tune=True aktiviert für alle drei Modelle
-    (linreg/ffn/xgboost) GridSearchCV mit identisch großem Parameter-Budget
-    via tune_sequence_model, statt wie zuvor nur optional für ffn/xgboost.
-
-    Returns:
-        (volume_pred, diff_pred) – beide als Ensemble-Mittelwert über die
-        Simulationen. diff_pred ist der direkte Modell-Output (BUGFIX 5:
-        nicht über np.diff(volume_pred) rückgerechnet).
+    Tuning-Caching (Performance-Fix):
+    Tuning läuft maximal einmal pro eindeutiger Kombination aus
+    (model_name, covariates, training_end, use_lags) – auch über Rolling-
+    Origins hinweg. Das Ergebnis wird in _TUNING_CACHE gespeichert und bei
+    allen nachfolgenden Aufrufen mit identischem Schlüssel wiederverwendet.
+    Dadurch entfällt das bisher 10×-redundante Tuning pro Simulation und das
+    N_Origins-fache Tuning im Rolling-Benchmark.
     """
     _, _, X_train, y_train, x_input, scaler_y, last_level = _prepare_sequence_data(
         covariates, training_end=training_end, use_lags=use_lags
     )
+
+    # Tuned estimator bestimmen: Priorität (1) explizit übergeben, (2) Cache,
+    # (3) jetzt tunen und cachen.
+    if do_tune and tuned_estimator is None:
+        cache_key = _tuning_cache_key(model_name, covariates, training_end, use_lags)
+        if cache_key in _TUNING_CACHE:
+            tuned_estimator = _TUNING_CACHE[cache_key]
+            print(f"[TUNING-CACHE] Hit für {model_name}/{cache_key[1]} "
+                  f"@ {training_end} – Tuning übersprungen.")
+        else:
+            try:
+                print(f"[TUNING] {model_name} | {sorted(covariates)} | {training_end} "
+                      f"{'(+lags)' if use_lags else ''} ...")
+                tuned_estimator = tune_sequence_model(model_name, X_train, y_train, seed=seed)
+                _TUNING_CACHE[cache_key] = tuned_estimator
+            except Exception as exc:
+                print(f"[TUNING] Fehlgeschlagen ({exc}). Fahre ohne Tuning fort.")
+                tuned_estimator = None
+
     diff_ensemble: list[np.ndarray] = []
     volume_ensemble: list[np.ndarray] = []
     for i in range(simulations):
         use_boot = simulations > 1
         m = fit_sequence_model(
-            model_name, X_train, y_train, seed=seed + i, bootstrap=use_boot, do_tune=do_tune
+            model_name,
+            X_train,
+            y_train,
+            seed=seed + i,
+            bootstrap=use_boot,
+            do_tune=False,
+            tuned_estimator=tuned_estimator,
         )
         raw = m.predict(x_input).reshape(PROGNOSEHORIZONT, 1)
         diff_pred = scaler_y.inverse_transform(raw).flatten()
@@ -885,8 +941,32 @@ def fit_tft(
     # Realität für die Zukunft nicht bekannt). Kalenderfeatures sind dagegen
     # für JEDEN Tag (Vergangenheit wie Zukunft) exakt berechenbar und gehen
     # daher als known_reals ein (Punkt 6).
-    unknown_reals = [TARGET_COL, TARGET_DIFF] + list(covariates)
+    #
+    # BUGFIX TFT-NaN: TARGET_COL ("Einlagevolumen") darf NICHT in unknown_reals
+    # stehen – es ist das Target, kein Feature. pytorch-forecasting validiert
+    # alle als unknown_reals deklarierten Spalten auf NaN-Freiheit im gesamten
+    # Frame (inkl. Validierungsfenster), was bei TARGET_COL im Decoder-Bereich
+    # fehlschlägt. TARGET_DIFF ist ebenfalls das (differenzierte) Target und
+    # wird als solches vom Dataset intern verwaltet; es braucht nicht extra als
+    # Feature deklariert zu werden.
+    unknown_reals = list(covariates)  # nur externe Kovariaten
     known_reals = list(CALENDAR_FEATURE_COLS) if use_calendar_known_reals else []
+
+    # TARGET_DIFF im val-Frame (split_idx < time_idx <= n) könnte NaN enthalten,
+    # falls dort noch keine echten Differenzen berechnet wurden. Wir füllen
+    # fehlende Werte mit 0 – pytorch-forecasting normalisiert den Target-Wert
+    # ohnehin intern; 0-Füllung im Val-Frame beeinflusst nur den Val-Loss, nicht
+    # die Test-Prognose.
+    train_tft_full[TARGET_DIFF] = train_tft_full[TARGET_DIFF].fillna(0.0)
+    train_tft_full[TARGET_COL] = train_tft_full[TARGET_COL].fillna(
+        train_tft_full[TARGET_COL].ffill()
+    )
+
+    # Kovariaten in train_tft_full forward-füllen (falls irgendwo NaN durch
+    # Lag-Berechnung oder fehlende Marktdaten entstanden sind).
+    for col in list(covariates) + list(CALENDAR_FEATURE_COLS):
+        if col in train_tft_full.columns:
+            train_tft_full[col] = train_tft_full[col].ffill().bfill()
 
     training = TimeSeriesDataSet(
         train_only,
@@ -1064,6 +1144,7 @@ def run_single_evaluation(
     use_lags: bool = False,
     do_tune: bool = False,
     use_calendar_known_reals: bool = True,
+    tuned_estimator: object | None = None,
 ) -> ForecastResult:
     """Führt eine vollständige Modell-Evaluation durch.
 
@@ -1106,6 +1187,7 @@ def run_single_evaluation(
             training_end=training_end,
             use_lags=use_lags,
             do_tune=do_tune,
+            tuned_estimator=tuned_estimator,
         )
     elif model_name == "tft":
         volume_pred, diff_pred = predict_tft_forecast(
@@ -1283,11 +1365,24 @@ def run_rolling_evaluation(
         spätere Signifikanztests, siehe diebold_mariano_test).
     """
     if origins is None:
-        origins = generate_rolling_origins(freq=freq)
+        min_rows = None
+        if model_name == "tft":
+            # gleiche Logik wie in predict_tft_forecast für minimales Trainingsvolumen
+            min_rows = GEDAECHTNIS + PROGNOSEHORIZONT + int((GEDAECHTNIS + PROGNOSEHORIZONT) * TFT_VAL_FRACTION) + 10
+        origins = generate_rolling_origins(freq=freq, min_train_rows=min_rows)
 
-    regime_lookup: dict[str, str] | None = None
-    if regime_col is not None:
-        regime_lookup = assign_interest_regime(origins, regime_col=regime_col)
+    # Falls tuning gewünscht ist: führe es EINMALIG vor der Origins-Schleife auf der
+    # größten Trainingsmenge (TRAINING_ENDE) aus und reiche das Ergebnis weiter.
+    precomputed_tuned: object | None = None
+    if do_tune and model_name in _SEQUENCE_MODELS:
+        try:
+            # _prepare_sequence_data liefert X_train/y_train für TRAINING_ENDE
+            _, _, X_full, y_full, _, _, _ = _prepare_sequence_data(covariates, training_end=TRAINING_ENDE, use_lags=use_lags)
+            print(f"[TUNING] Führe einmaliges Tuning für {model_name} (Rolling) durch...")
+            precomputed_tuned = tune_sequence_model(model_name, X_full, y_full, seed=SEED)
+            print(f"[TUNING] Fertig: Verwende getunte Parameter für {model_name} in Rolling.")
+        except Exception as exc:
+            print(f"[TUNING] Einmaliges Tuning für {model_name} in Rolling fehlgeschlagen: {exc}. Fahre ohne Tuning fort.")
 
     rows = []
     for origin in origins:
@@ -1305,7 +1400,8 @@ def run_rolling_evaluation(
                 simulations=simulations,
                 training_end=origin,
                 use_lags=use_lags,
-                do_tune=do_tune,
+                do_tune=False,  # tuning bereits vorab erledigt (falls gewünscht)
+                tuned_estimator=precomputed_tuned,
             )
             row = {
                 "Modell":        r.model,

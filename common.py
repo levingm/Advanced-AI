@@ -483,7 +483,7 @@ def predict_naive_hold(
 
 
 # ---------------------------------------------------------------------------
-# Sequenzmodelle: LinReg, FFN, XGBoost – OPTIMIERT
+# Sequenzmodelle: LinReg, FFN, XGBoost
 # ---------------------------------------------------------------------------
 
 # -------------------------
@@ -610,13 +610,8 @@ def fit_sequence_model(
 ) -> object:
     """Instanziiert und trainiert ein Sequenzmodell.
 
-<<<<<<< HEAD
     tuned_estimator: Falls gesetzt, wird ein Klon dieses estimators verwendet
     (nützlich, wenn Tuning einmalig durchgeführt und das Ergebnis wiederverwendet wird).
-=======
-    PERF: do_tune=False reicht für den Benchmark (Tuning ist bereits gecacht).
-    Falls benötigt: do_tune=True erzwingt Tuning (benutze nur einmal pro Model!).
->>>>>>> 63cd1546da0adb5ab517824a6832e8abf4be8791
     """
     # Helper: fit a cloned estimator on (maybe bootstrapped) training data
     def _fit_cloned(estimator):
@@ -1030,8 +1025,9 @@ def predict_tft_multi_step(
     model: TemporalFusionTransformer,
     training_dataset: TimeSeriesDataSet,
     history_df: pd.DataFrame,
+    covariates: list[str],
 ) -> np.ndarray:
-    """Prognostiziert mit TFT über mehrere Schritte (Multi-Step).
+    """Multi-Step-TFT-Prognose für den Standard-Benchmark.
 
     BUGFIX 4: Kovariaten im Vorhersagefenster (Decoder) werden NICHT mehr auf
     NaN gesetzt. pytorch_forecasting normalisiert Inputs auch im Decoder
@@ -1049,9 +1045,9 @@ def predict_tft_multi_step(
     Zukunft exakt bekannt, kein Trick nötig.
     """
     history_prep = _add_tft_columns(history_df)
-    max_time_idx = history_prep["time_idx"].max()
+    max_time_idx = int(history_prep["time_idx"].max())
+    last_date = history_prep["Datum"].max()
 
-    # Future DataFrame: Struktur für TFT, aber ohne echte Werte
     future_rows = []
     for i in range(1, PROGNOSEHORIZONT + 1):
         row = {
@@ -1074,23 +1070,24 @@ def predict_tft_multi_step(
 
     combined = pd.concat([history_prep, future_df], ignore_index=True)
     predict_ds = TimeSeriesDataSet.from_dataset(
-        training_dataset,
-        combined,
-        predict=True,
-        stop_randomization=True,
+        training_dataset, combined, predict=True, stop_randomization=True
     )
     loader = predict_ds.to_dataloader(train=False, batch_size=1, num_workers=0)
+    trainer_device_kwargs = dict(
+        accelerator="gpu" if torch.cuda.is_available() else "cpu",
+        devices=1,
+        logger=False,
+        enable_checkpointing=False,
+    )
     pred = _to_numpy(
         model.predict(
             loader,
-            trainer_kwargs=dict(
-                accelerator="gpu" if torch.cuda.is_available() else "cpu",
-                logger=False,
-                enable_checkpointing=False,
-            ),
+            trainer_kwargs=trainer_device_kwargs,
         )
     )
     flat = pred.reshape(-1)
+    if len(flat) < PROGNOSEHORIZONT:
+        raise ValueError(f"TFT lieferte {len(flat)} Werte, erwartet {PROGNOSEHORIZONT}.")
     return flat[-PROGNOSEHORIZONT:]
 
 
@@ -1117,10 +1114,7 @@ def predict_tft_forecast(
         (GEDAECHTNIS + PROGNOSEHORIZONT) * TFT_VAL_FRACTION
     ) + 10
     if len(train_df) < min_train:
-        raise ValueError(f"Zu wenig Trainingsdaten: {len(train_df)} < {min_train}")
-
-    last_level = float(_loc_value_snapped(df, training_end, TARGET_COL))
-    diff_ensemble: list[np.ndarray] = []
+        raise ValueError(f"Zu wenig Trainingsdaten für TFT: {len(train_df)} < {min_train}.")
 
     last_level = float(_loc_value_snapped(df, training_end, TARGET_COL))
     diff_ensemble: list[np.ndarray] = []
@@ -1134,8 +1128,12 @@ def predict_tft_forecast(
 
 
 # ---------------------------------------------------------------------------
-# Evaluation + Results
+# Zentrale Evaluationsfunktionen
 # ---------------------------------------------------------------------------
+
+_SEQUENCE_MODELS = {"linreg", "ffn", "xgboost"}
+_NAIVE_MODELS = {"naive_rw", "naive_hold"}
+
 
 def run_single_evaluation(
     model_name: str,
@@ -1207,17 +1205,12 @@ def run_single_evaluation(
             covariates=covariates, simulations=simulations, training_end=training_end
         )
     else:
-        volume_pred, diff_pred = predict_sequence_model(
-            model_name,
-            covariates,
-            simulations=simulations,
-            seed=SEED,
-            training_end=training_end,
+        raise ValueError(
+            f"Unbekanntes Modell: {model_name!r}. Gültig: {ALL_MODELS}"
         )
 
     metrics = compute_metrics(true_diff, diff_pred, true_volume, volume_pred)
 
-    metrics = compute_metrics(true_diff, diff_pred, true_volume, volume_pred)
     return ForecastResult(
         model=model_name,
         covariates=covariates,
@@ -1229,35 +1222,62 @@ def run_single_evaluation(
     )
 
 
-def results_to_dataframe(results: Iterable[ForecastResult]) -> pd.DataFrame:
-    """Konvertiert ForecastResults zu pandas DataFrame (sortiert nach MAE_Volumen)."""
-    rows = []
-    for r in results:
-        rows.append(
-            {
-                "Modell": r.model,
-                "Kovariaten": ", ".join(r.covariates),
-                "Label": r.covariate_label,
-                "n_Kovariaten": len(r.covariates),
-                "MAE_Diff": r.mae_diff,
-                "RMSE_Diff": r.rmse_diff,
-                "R2_Diff": r.r2_diff,
-                "MAE_Volumen": r.mae_volume,
-                "RMSE_Volumen": r.rmse_volume,
-                "R2_Volumen": r.r2_volume,
-            }
-        )
-    return pd.DataFrame(rows).sort_values(["Modell", "MAE_Volumen"])
+# ---------------------------------------------------------------------------
+# FIX 1: Rolling-Origin-Evaluation
+# ---------------------------------------------------------------------------
 
+def generate_rolling_origins(
+    freq: str = "MS",
+    last_origin: str = TRAINING_ENDE,
+    min_train_rows: int | None = None,
+) -> list[str]:
+    """Generiert Evaluations-Origins für Rolling-Origin-Evaluation.
 
-def generate_rolling_origins(freq: str = "MS", max_origins: int | None = None) -> list[str]:
-    """Generiert Rolling-Origin-Daten."""
-    df = _load_base_frame()
-    ts_range = pd.date_range(start="2023-07-01", end=TRAINING_ENDE, freq=freq)
-    origins = [str(d.date()) for d in ts_range]
-    if max_origins:
-        origins = origins[-max_origins:]
-    return origins
+    Args:
+        freq:           Pandas-Frequenz der Origins (z.B. "MS" monatlich, "YS" jährlich)
+                        oder Jahres-Schritt als "<n>Y" (z.B. "5Y" = alle 5 Jahre).
+        last_origin:    Letztes/spätestes Origin-Datum
+        min_train_rows: Mindest-Trainingszeilen (default: GD + PH + Puffer)
+
+    Returns:
+        Sortierte Liste von Datumsstrings (YYYY-MM-DD)
+    """
+    min_rows = min_train_rows or (GEDAECHTNIS + PROGNOSEHORIZONT + 20)
+
+    # Basis-Frame für Datumsverfügbarkeit laden
+    df_base = _load_base_frame()[[TARGET_COL]].copy()
+    df_base[TARGET_DIFF] = df_base[TARGET_COL].diff()
+    df_clean = df_base.dropna()
+
+    if len(df_clean) < min_rows + PROGNOSEHORIZONT:
+        raise ValueError("Zu wenig Daten für Rolling-Origin-Evaluation.")
+
+    # Frühestes sinnvolles Origin
+    earliest = df_clean.index[min_rows - 1]
+    last_ts = pd.Timestamp(last_origin)
+
+    # Unterstützung für Jahres-Intervalle im Format '5Y', '10Y' usw.
+    import re
+    m = re.match(r"^(\d+)Y$", str(freq))
+    if m:
+        step = int(m.group(1))
+        candidates = pd.date_range(earliest, last_ts, freq=pd.DateOffset(years=step))
+    else:
+        # sonst direkt mit Pandas-Frequenz-String arbeiten (z.B. "MS", "YS", "A")
+        candidates = pd.date_range(earliest, last_ts, freq=freq)
+
+    origins: list[str] = []
+    for cand in candidates:
+        # Nächstliegendes verfügbares Datum <= Kandidat
+        avail = df_clean.index[df_clean.index <= cand]
+        if len(avail) >= min_rows:
+            origins.append(str(avail[-1].date()))
+
+    # Sicherstellen, dass last_origin immer enthalten ist
+    if last_origin not in origins:
+        origins.append(last_origin)
+
+    return sorted(set(origins))
 
 
 # ---------------------------------------------------------------------------
@@ -1364,7 +1384,7 @@ def run_rolling_evaluation(
         except Exception as exc:
             print(f"[TUNING] Einmaliges Tuning für {model_name} in Rolling fehlgeschlagen: {exc}. Fahre ohne Tuning fort.")
 
-    results = []
+    rows = []
     for origin in origins:
         try:
             df_o, df_clean_o, _, _ = load_prepared_df(
@@ -1404,8 +1424,14 @@ def run_rolling_evaluation(
                 row["Regime"] = regime_lookup.get(origin, "unbekannt")
             rows.append(row)
         except Exception as exc:
-            print(f"  [Rolling] Origin {origin} / {model_name}: {exc}")
-    return pd.DataFrame(results)
+            print(f"[Fehler] {model_name} / {origin}: {exc}")
+
+    if not rows:
+        raise ValueError("Keine Rolling-Ergebnisse – Datenverfügbarkeit prüfen.")
+
+    df = pd.DataFrame(rows)
+    df["training_end"] = pd.to_datetime(df["training_end"])
+    return df.sort_values(["Modell", "training_end"]).reset_index(drop=True)
 
 
 def aggregate_rolling_results(rolling_df: pd.DataFrame) -> pd.DataFrame:

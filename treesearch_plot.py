@@ -16,28 +16,35 @@ def plot_forecast(
     use_lags: bool = False,
     do_tune: bool = False,
     use_calendar_known_reals: bool = True,
+    training_end: str | None = None,
 ):
     covariates = covariates or tc.ALL_COVARIATES
     sims = simulations if simulations is not None else tc.SIMULATIONEN
+    t_end = training_end if training_end is not None else tc.TRAINING_ENDE
     mittelwert, ki90, ki98, _, df = tc.run_ensemble_volume_paths(
         model_name,
         covariates,
         simulations=sims,
+        training_end=t_end,
         use_lags=use_lags,
         do_tune=do_tune,
         use_calendar_known_reals=use_calendar_known_reals,
     )
 
-
-    input_anfang = tc._next_date_in_index(df, tc.TRAINING_ENDE)
+    input_anfang = tc._next_date_in_index(df, t_end)
 
     real_values = df.loc[input_anfang:].iloc[: tc.PROGNOSEHORIZONT][tc.TARGET_COL].values
-    historie = df.loc[tc.HISTORIE_ANFANG : tc.HISTORIE_ENDE, tc.TARGET_COL]
+    t_end_ts = pd.Timestamp(t_end)
+    t_start_ts = t_end_ts - pd.DateOffset(months=6)
+    
+    hist_start = df.index[df.index >= t_start_ts][0]
+    hist_end = df.index[df.index <= t_end_ts][-1]
+    historie = df.loc[hist_start : hist_end, tc.TARGET_COL]
     x_zukunft = pd.date_range(input_anfang, periods=tc.PROGNOSEHORIZONT, freq="D")
 
     fig, axes = plt.subplots(2, 1, figsize=(15, 10), gridspec_kw={"height_ratios": [3, 1]})
 
-    axes[0].plot(historie.index, historie.values, color="blue", label="Historische Daten (Training)")
+    axes[0].plot(historie.index, historie.values, color="blue", label=f"Historische Daten (Training bis {t_end})")
     axes[0].plot(
         x_zukunft,
         real_values[: len(x_zukunft)],

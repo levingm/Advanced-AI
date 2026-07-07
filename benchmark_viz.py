@@ -2,6 +2,20 @@
 
 from __future__ import annotations
 
+# WICHTIG: Backend MUSS vor dem ersten `import matplotlib.pyplot` gesetzt
+# werden. Grund: Auf Windows nutzt joblib/loky (von GridSearchCV(n_jobs=-1)
+# in common.tune_sequence_model) den "spawn"-Start-Modus für Worker-Prozesse.
+# Dabei importiert jeder Worker-Prozess das komplette __main__-Skript neu
+# (covariate_benchmark.py -> benchmark_viz.py -> matplotlib.pyplot). Ohne
+# explizites Backend fällt matplotlib auf TkAgg zurück (Tkinter ist auf
+# Windows-Python i.d.R. vorhanden), was in diesen kurzlebigen Worker-Prozessen
+# beim Interpreter-Shutdown zu "RuntimeError: main thread is not in main loop"
+# führt (Tkinter-Cleanup ohne laufenden Tk-Mainloop). "Agg" ist ein rein
+# dateibasiertes, nicht-interaktives Backend – für dieses Skript (nur
+# savefig(), kein plt.show() nötig) ohnehin die richtige Wahl.
+import matplotlib
+matplotlib.use("Agg")
+
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np

@@ -49,6 +49,11 @@ def parse_args():
         help="Einheitliches GridSearchCV-Tuning aktivieren (Punkt 3, siehe common.TUNING_BUDGET).",
     )
     parser.add_argument(
+        "--training-end",
+        default=None,
+        help="Optionaler Endzeitpunkt des Trainingsfensters (z.B. '2015-12-31'). Verhindert Data Leakage.",
+    )
+    parser.add_argument(
         "--tft-baseline",
         action="store_true",
         help=(
@@ -63,7 +68,9 @@ def main():
     args = parse_args()
     covariates = args.kovariaten if args.kovariaten else tc.covariates_for_label(args.label)
     label_slug = args.label if not args.kovariaten else "custom"
-    out = args.output or f"forecast_{args.modell}_{label_slug}.png"
+    date_slug = f"_{args.training_end}" if args.training_end else ""
+    out = args.output or f"forecast_{args.modell}_{label_slug}{date_slug}.png"
+
 
     plot_forecast(
         model_label=MODEL_LABELS[args.modell],
@@ -75,6 +82,7 @@ def main():
         use_lags=args.lags,
         do_tune=args.tune,
         use_calendar_known_reals=not args.tft_baseline,
+        training_end=args.training_end
     )
     if not args.show:
         print(f"Plot gespeichert: {out}")

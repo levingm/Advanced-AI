@@ -9,13 +9,21 @@ Ausgabe:
 
 from __future__ import annotations
 
-import os
-os.environ["OMP_NUM_THREADS"] = "1"
-os.environ["MKL_NUM_THREADS"] = "1"
-os.environ["OPENBLAS_NUM_THREADS"] = "1"
-os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
-os.environ["NUMEXPR_NUM_THREADS"] = "1"
-os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+# WICHTIG: muss vor jedem `import matplotlib(.pyplot)` stehen – auch vor dem
+# von benchmark_viz.py. Windows/joblib-Grund: siehe Kommentar in
+# benchmark_viz.py. Da dieses Skript das __main__-Modul ist, das von
+# GridSearchCV-Worker-Prozessen (spawn-Modus) neu importiert wird, muss der
+# Agg-Fallback hier an allererster Stelle gesetzt werden.
+import matplotlib
+matplotlib.use("Agg")
+
+# Hinweis: Frühere Versionen setzten hier OMP_NUM_THREADS=1 etc. GLOBAL für
+# den gesamten Prozess. Das drosselte auch TFT-Training (PyTorch/Lightning)
+# und ungetunte Einzel-Fits unnötig auf 1 Thread, obwohl die gar nicht unter
+# GridSearchCV-Parallelität laufen. Das eigentliche Overcommit-Risiko
+# (GridSearchCV(n_jobs=-1) + BLAS/XGBoost-interne Parallelität pro Fold)
+# wird jetzt gezielt NUR während des Tunings selbst begrenzt, siehe
+# common.tune_sequence_model (threadpool_limits + xgboost n_jobs=1).
 
 import argparse
 
@@ -85,6 +93,17 @@ def parse_args() -> argparse.Namespace:
         help="Rollierende Out-of-Sample-Evaluation über mehrere Origins",
     )
     parser.add_argument(
+        "--rolling-start",
+        default=None,
+        help="Startdatum für Rolling-Origins (z.B. '2003-11-30' für exakt 20 Jahre vor Trainingsende).",
+    )
+    parser.add_argument(
+        "--rolling-origins",
+        nargs="+",
+        default=None,
+        help="Explizite Liste von Datumsangaben als Testfenster-Ende (z.B. '2013-03-31' '2019-03-31' '2025-06-22'). Überschreibt automatische Frequenzberechnung.",
+    )
+    parser.add_argument(
         "--rolling-freq",
         default="MS",
         help="Frequenz der Rolling-Origins (Pandas-Alias, z.B. 'MS'=monatlich, 'QS'=quartalsweise)",
@@ -109,9 +128,9 @@ def parse_args() -> argparse.Namespace:
         "--tune",
         action="store_true",
         help=(
-            "GridSearchCV mit einheitlichem Parameter-Budget (TUNING_BUDGET Kombinationen) "
-            "für ALLE Sequenzmodelle aktivieren (linreg/ffn/xgboost), statt ungetunter "
-            "Defaults bzw. nur teilweisem Tuning."
+            f"GridSearchCV mit einheitlichem Parameter-Budget (<= common.TUNING_BUDGET = "
+            f"{tc.TUNING_BUDGET} Grid-Kombinationen) für ALLE Sequenzmodelle aktivieren "
+            f"(linreg/ffn/xgboost), statt ungetunter Defaults bzw. nur teilweisem Tuning."
         ),
     )
     # Punkt 5: Zinsregime als Split-Kriterium (nur sinnvoll mit --rolling)
@@ -253,6 +272,15 @@ def run_rolling_benchmark(args: argparse.Namespace) -> pd.DataFrame:
     combos = tc.generate_covariate_combinations(args.kovariaten_modus)
     origins = tc.generate_rolling_origins(freq=args.rolling_freq)
 
+    if args.rolling_origins:
+        origins = sorted(args.rolling_origins)
+        print(f"\n[ROLLING] Verwende {len(origins)} explizit vorgegebene Origins: {origins}")
+    else:
+        origins = tc.generate_rolling_origins(
+            freq=args.rolling_freq, 
+            start_origin=args.rolling_start
+        )
+
     naive_models = set(["naive_rw", "naive_hold"])
     tasks = []
     for m in args.modelle:
@@ -300,7 +328,7 @@ def run_rolling_benchmark(args: argparse.Namespace) -> pd.DataFrame:
     array_cols = [c for c in ["diff_pred", "volume_pred", "true_diff", "true_volume"] if c in df_full.columns]
     df_csv = df_full.drop(columns=array_cols)
     df_csv.to_csv(args.rolling_output, index=False, encoding="utf-8-sig")
-    print(f"\nRolling-CSV gespeichert: {args.rolling_output} (ohne Rohdaten-Arrays)")
+    print(f"\nRolling-CSV gespeichert: {args.rolling_output} ")
 
     print("\n--- Aggregierte Rolling-Metriken (Mittelwert ± Std) ---")
     agg = tc.aggregate_rolling_results(df_csv)

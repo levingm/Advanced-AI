@@ -1,0 +1,350 @@
+\documentclass[11pt,a4paper]{article}
+
+% ---------------------------------------------------------------------------
+% Packages
+% ---------------------------------------------------------------------------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}          % switch to german if you write in German
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}                % nicer tables
+\usepackage{caption}
+\usepackage{subcaption}              % side-by-side figures/tables
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{hyperref}
+\usepackage{natbib}                  % citation management, or use biblatex instead
+\usepackage{listings}                % for code snippets in the appendix
+\usepackage{xcolor}
+\usepackage{setspace}
+\usepackage{authblk}                 % multiple authors / affiliations
+\usepackage[most]{tcolorbox}         % highlighted boxes, e.g. for research questions
+\usepackage{pifont}                  % \ding{51}/\ding{55} check/cross marks in tables
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    citecolor=black,
+    urlcolor=blue
+}
+
+% Basic code listing style (for appendix code excerpts)
+\lstset{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny,
+    columns=fullflexible,
+    keywordstyle=\color{blue},
+    commentstyle=\color{gray}
+}
+
+% Reusable box for highlighting the research question(s), as recommended
+% in "How to Write Scientific Papers" (LMU v2, p.17): research questions
+% should stand out as their own highlighted paragraph in the introduction.
+\newtcolorbox{researchquestion}{
+    colback=blue!5, colframe=blue!40!black, boxrule=0.6pt,
+    left=6pt, right=6pt, top=4pt, bottom=4pt
+}
+
+% ---------------------------------------------------------------------------
+% Title, authors, affiliation
+% ---------------------------------------------------------------------------
+\title{\textbf{Paper Title: Forecasting X with Y --- A Comparative Evaluation}}
+\author[1]{Author One}
+\author[1]{Author Two}
+\affil[1]{LMU Munich School of Management, Institute of AI in Management}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+% ---------------------------------------------------------------------------
+% Abstract
+% ---------------------------------------------------------------------------
+% Guidance (LMU "How to Write Scientific Papers", p.13):
+% - Short summary that must stand on its own; basis for the reader's
+%   decision on whether to keep reading.
+% - Length: <= 150 words (some venues allow 100-250), ONE paragraph.
+% - Contains NO references/citations.
+% - Structure: (1) motivate relevance of the problem, (2) state the
+%   problem briefly, (3) name the methodology, (4) summarize the outcome
+%   with quantitative results.
+\begin{abstract}
+% (1) Relevance -- 1-2 sentences.
+% (2) Problem statement -- 1 sentence.
+% (3) Methodology -- 1-2 sentences.
+% (4) Quantitative outcome / takeaway -- 1-2 sentences.
+    Depositvolume is a the amount of cash sitting inside the money market account.
+    For a bank it is of great interest to predict the depositvolume, in order to know the amount of money they can work with.
+    In this project we focused on different variables and machine learning methods to predict the depositvolume.
+
+    Placeholder abstract text (target: $\leq 150$ words, no citations).
+\end{abstract}
+
+\newpage
+\tableofcontents
+\newpage
+
+% ---------------------------------------------------------------------------
+% 1. Introduction
+% ---------------------------------------------------------------------------
+% Guidance (course slides + writing-process deck p.17):
+% Four-part structure:
+%   1. Motivate relevance of the problem (give context)
+Since non-maturing deposits have no contractual maturity it is essential for banks to have a model predicting the volume. 
+%   2. State the problem briefly
+If they do not have such a model or the model does not work it is impossible for the liquidity management to work properly.
+%   3. Repeat contribution, e.g. as an explicit, highlighted research
+%      question / hypothesis
+%   4. Outline: structure of the paper as a story line (not just
+%      "Section 2 analyzes ..." -- LINK sections, motivate why each is
+%      needed; see example paragraph below, p.19)
+After a brief introduction this paper will go over the data used to predict the deposit-volume NEEDS VARIABLE $V_t$.  
+% Also: when/where can the method be used, why/for whom is it relevant.
+% Avoid unsupported claims like "... is important" -- give arguments,
+% and consider a quotation from a top-tier paper to support relevance
+% (see "Quotations", p.31: use rarely, 0-5 per paper total).
+\section{Introduction}
+\label{sec:introduction}
+
+% --- Part 1: Relevance / context ---
+
+% --- Part 2: Problem statement ---
+
+% --- Part 3: Research question(s) / contribution, own highlighted paragraph ---
+\begin{researchquestion}
+\textbf{Research Question(s):}
+\begin{itemize}
+    \item RQ1: \dots
+\end{itemize}
+\end{researchquestion}
+
+% --- Part 4: Outline / roadmap, written as a connected story, not a list.
+% Example (adapt), from LMU v2 p.19:
+% "The remainder of this paper is structured as follows. Section 2
+% provides a literature overview of [topic], where [research gap]. To
+% close this research gap, Section 3 [approach]. These models/methods
+% are evaluated in Section 4, which, finally, reveals that [key finding]."
+
+% ---------------------------------------------------------------------------
+% 2. Related Work
+% ---------------------------------------------------------------------------
+% Guidance (p.20-21):
+% - Goal: make clear that the research is relevant AND novel.
+% - Do not just enumerate references -- summarize findings and state
+%   differences to your own study.
+% - A tabular presentation (references x dimensions, incl. "This paper"
+%   as the last row) is a strong, easy-to-scan way to show what is
+%   different from prior work.
+% - Final paragraph: wrap-up stressing novelty relative to the above.
+% - Avoid definitive claims like "this is new" -- prefer hedged phrasing,
+%   e.g. "we are not aware of similar research" / "to our best knowledge".
+\section{Related Work}
+\label{sec:related_work}
+
+% Optional: tabular overview of related work, modeled on LMU v2 p.21.
+\begin{table}[htbp]
+    \centering
+    \caption{Overview of related work and positioning of this paper.}
+    \label{tab:related_work}
+    \begin{tabular}{lccccc}
+        \toprule
+        Reference & Data/Market & Method & Rolling & Out-of-sample & \dots \\
+        \midrule
+        Author et al. (Year) & \dots & \dots & \ding{55} & \ding{51} & \dots \\
+        Author et al. (Year) & \dots & \dots & \ding{51} & \ding{55} & \dots \\
+        \midrule
+        \textbf{This paper} & \dots & \dots & \ding{51} & \ding{51} & \dots \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+% ---------------------------------------------------------------------------
+% 3. Methods
+% ---------------------------------------------------------------------------
+% Guidance (p.22): pay close attention to formulae -- even small errors
+% look unprofessional. Visualize the pipeline via a flow diagram if it
+% helps comprehension (e.g. draw.io).
+\section{Methods}
+\label{sec:methods}
+
+\subsection{Problem Setting and Data}
+% - Data source(s), time period, granularity MUST CHECK REFS
+All datapoints are based on January 2003 - December 2025:\\
+- The overnight deposit volume and interest rate was sourced from Deutsche Bundesbank and consist of monthly end-of-period levels\citep{bundesbank_data}.\\
+- The Euro Short-Term Rate $\text{€STR}$ sourced from the ECB, consisting of data for each business day\citep{ecb_estr}.\\
+- The German geopolitical risk index $\mathrm{GPRC\_DEU}$ sourced monthly\citep{gpr_index}.\\
+- The month-on-month inflation $\mathrm{MoM-Inflation}$ sourced monthly\citep{destatis_inflation}.\\
+- The DAX index sourced with yfinance on business days\citep{dax_index}.\\
+- The 10-year German bond yield $\mathrm{10Y~Bond}$ sourced on business days\citep{bundesbank_bonds}. \\
+
+Overnight deposits or non-maturity deposits are deposits with next-day maturity. Consisting mainly of fully transferable deposits and deposits non-transferable deposits that can be converted by end of the next business day \citep{ecb2026glossary}. 
+
+% - Target variable definition
+The target variable is the daily volume of overnight deposits $V_t$ held by private household, sourced from Deutsche Bundesbank.
+% - Jump-problem 
+% -------------------------------------------------------------------
+% THIS SECTION MIGHT GO SOMEWHERE ELSE
+% -------------------------------------------------------------------
+Predicting the actual volume comes with a hand full of problems since:\\
+- reaches a new high/low many times -> can't be predicted by many(/any??) machine learning algorithm
+- Solution: Transform the target variable into the difference in change between two days  
+% - Preprocessing steps
+To get all of the data points into daily rates different methods have been applied to ensure the best possible data while reaching the wanted granularity:
+\\
+ADD METHODS HERE SEE 5.2 Masterthesis
+\\
+\subsection{Exploratory Data Analysis}
+% - Descriptive statistics (table)
+% - Key visualizations (time series plots, distributions, correlations)
+HERE PLOTS OF THE DATA ARE SHOWN
+\subsection{Models}
+% - Mathematical/methodological background of each model used
+% - Justification for model choice(s): interpretable vs. black-box
+% Example equation environment (double-check every formula carefully):
+\begin{equation}
+    \hat{y}_{t+h} = f(X_t, X_{t-1}, \dots, X_{t-p}; \theta) + \varepsilon_t
+    \label{eq:general_forecast}
+\end{equation}
+
+\subsection{Evaluation Strategy}
+% - Train/test split or rolling-origin evaluation
+% - Metrics used (e.g., MAE, RMSE, R^2)
+% - Statistical significance testing (e.g., Diebold-Mariano), if applicable
+
+% Optional pipeline overview figure (recommended if it aids understanding):
+\begin{figure}[htbp]
+    \centering
+    % \includegraphics[width=\textwidth]{figures/pipeline_overview.png}
+    \caption{Overview of the analytics pipeline: data preprocessing,
+    model training, and evaluation stages.}
+    \label{fig:pipeline}
+\end{figure}
+
+% ---------------------------------------------------------------------------
+% 4. Results
+% ---------------------------------------------------------------------------
+% Guidance (p.25): consider the "rule of three" (roughly: three key
+% figures/tables/points is usually enough to make the results section
+% land -- avoid overwhelming the reader with every single output).
+% Every figure/table must be referenced in the text (e.g. "... in
+% Figure 3", "... in Table 2"); state the message of what the reader
+% should see, don't just present the plot.
+\section{Results}
+\label{sec:results}
+
+\begin{table}[htbp]
+    \centering
+    \caption{Out-of-sample performance comparison across models. Metrics
+    computed on the reconstructed volume level and the differenced
+    series (mean $\pm$ std over rolling origins).}
+    \label{tab:results_comparison}
+    \begin{tabular}{lccc}
+        \toprule
+        Model & MAE & RMSE & $R^2$ \\
+        \midrule
+        Naive (Random Walk) & -- & -- & -- \\
+        Naive (Hold)         & -- & -- & -- \\
+        Linear Regression    & -- & -- & -- \\
+        XGBoost              & -- & -- & -- \\
+        FFN                  & -- & -- & -- \\
+        TFT                  & -- & -- & -- \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+% Guidance on figures (p.28-29):
+% - Plots must be printer-friendly (black/white or solid/dashed lines,
+%   not color-only encoding).
+% - Name axes with units, include a legend.
+% - Always state the message of the figure in the surrounding text.
+% - Detailed captions: paper is often scanned, so a figure + caption
+%   must be understandable WITHOUT reading the surrounding text --
+%   name axes/data rows, give setup details (e.g. time range, model).
+\begin{figure}[htbp]
+    \centering
+    % \includegraphics[width=0.8\textwidth]{figures/forecast_comparison.png}
+    \caption{Example caption style: ``Comparison of forecasting accuracy
+    in terms of RMSE, measured from [start date] to [end date] across
+    [list of models].''}
+    \label{fig:forecast_comparison}
+\end{figure}
+
+% ---------------------------------------------------------------------------
+% 5. Discussion
+% ---------------------------------------------------------------------------
+% Guidance (p.25): recommended ideas to cover --
+% - Limitations (also feed into Outlook)
+% - Managerial implications
+% - Future impact
+\section{Discussion}
+\label{sec:discussion}
+% - What does it mean? Interpret the results in context.
+% - Why did certain models outperform others?
+% - Limitations of the analysis (data, methods, assumptions).
+% - Managerial implications for decision-makers.
+% - Broader / future impact.
+
+% ---------------------------------------------------------------------------
+% 6. Conclusion and Outlook
+% ---------------------------------------------------------------------------
+% Guidance (p.26), three-part structure:
+%   1. Repeat problem and its relevance
+%   2. Repeat contribution, incl. quantitative results
+%   3. [Optional] Outlook on further research steps
+\section{Conclusion and Outlook}
+\label{sec:conclusion}
+
+% --- Part 1: Problem + relevance, briefly restated ---
+
+% --- Part 2: Contribution + key quantitative results ---
+
+% --- Part 3: Outlook / future work ---
+
+% ---------------------------------------------------------------------------
+% Acknowledgements (journals only -- optional for this course deliverable)
+% ---------------------------------------------------------------------------
+% \section*{Acknowledgements}
+
+% ---------------------------------------------------------------------------
+% Bibliography
+% ---------------------------------------------------------------------------
+% Prefer "good" references (course guidance, p.9): peer-reviewed
+% journals/conferences, English, from the same or a closely related
+% domain, ideally from ranked outlets (e.g. VHB JOURQUAL, FT50,
+% Handelsblatt ranking). Use books mainly for background, and web
+% sources mainly as data sources -- not as the primary evidence base.
+%
+% Option A: natbib + a .bib file (recommended; use a reference manager
+% such as Citavi, Zotero, or EndNote to build references.bib)
+\bibliographystyle{apalike}
+\bibliography{references}
+
+% Option B: manual thebibliography (quick start, replace with natbib
+% once you have enough sources -- course guideline: ~10-40 references
+% cited, scanning up to ~100)
+%\bibliographystyle{apalike}
+%\bibliography{references}
+
+% ---------------------------------------------------------------------------
+% Appendices
+% ---------------------------------------------------------------------------
+\appendix
+\section{Appendix: Additional Figures and Tables}
+\label{app:additional}
+% Any supplementary material that doesn't fit in the main text.
+
+\section{Appendix: Code}
+\label{app:code}
+% Code can be attached and counts towards the length requirement
+% (22,000-33,300 characters per the seminar description).
+\begin{lstlisting}[language=Python, caption={Example: model fitting excerpt}]
+def fit_sequence_model(model_name, X_train, y_train, seed=SEED):
+    # ...
+    pass
+\end{lstlisting}
+
+\end{document}

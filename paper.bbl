@@ -1,0 +1,41 @@
+\begin{thebibliography}{}
+
+\bibitem[Caldara and Iacoviello, 2022]{gpr_index}
+Caldara, D. and Iacoviello, M. (2022).
+\newblock Geopolitical risk index (gprc_deu).
+\newblock Accessed: [9.7.2026].
+
+\bibitem[{Destatis}, 2025]{destatis_inflation}
+{Destatis} (2025).
+\newblock Consumer price index (cpi) and inflation rates in germany.
+\newblock Accessed: [9.7.2026].
+
+\bibitem[{Deutsche Bundesbank}, 2025a]{bundesbank_data}
+{Deutsche Bundesbank} (2025a).
+\newblock Bank statistics: Deposits of domestic non-financial corporations and
+  households.
+\newblock Accessed: [9.7.2026].
+
+\bibitem[{Deutsche Bundesbank}, 2025b]{bundesbank_bonds}
+{Deutsche Bundesbank} (2025b).
+\newblock Yields of debt securities outstanding: 10-year maturity.
+\newblock Accessed: [9.7.2026].
+
+\bibitem[{Deutsche Börse}, 2025]{dax_index}
+{Deutsche Börse} (2025).
+\newblock Dax historical data.
+\newblock Accessed: [9.7.2026].
+
+\bibitem[{European Central Bank}, 2025]{ecb_estr}
+{European Central Bank} (2025).
+\newblock Euro short-term rate (€str).
+\newblock Accessed: [9.7.2026].
+
+\bibitem[{European Central Bank}, 2026]{ecb2026glossary}
+{European Central Bank} (2026).
+\newblock Overnight deposits.
+\newblock Monetary Policy Glossary,
+  \url{https://www.ecb.europa.eu/services/glossary/html/act6o.en.html}.
+\newblock Accessed: [9.7.2026].
+
+\end{thebibliography}

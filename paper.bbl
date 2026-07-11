@@ -1,9 +1,15 @@
 \begin{thebibliography}{}
 
+\bibitem[Aroussi, 2025]{yfinance}
+Aroussi, R. (2025).
+\newblock yfinance: Download market data from yahoo! finance's api.
+\newblock \url{https://ranaroussi.github.io/yfinance/}.
+\newblock Accessed: 9 July 2026.
+
 \bibitem[Caldara and Iacoviello, 2022]{gpr_index}
 Caldara, D. and Iacoviello, M. (2022).
-\newblock Geopolitical risk index (gprc_deu).
-\newblock Accessed: [9.7.2026].
+\newblock Geopolitical risk index ({GPRC\_DEU}).
+\newblock Accessed: [11.7.2026].
 
 \bibitem[{Destatis}, 2025]{destatis_inflation}
 {Destatis} (2025).
@@ -12,8 +18,7 @@ Caldara, D. and Iacoviello, M. (2022).
 
 \bibitem[{Deutsche Bundesbank}, 2025a]{bundesbank_data}
 {Deutsche Bundesbank} (2025a).
-\newblock Bank statistics: Deposits of domestic non-financial corporations and
-  households.
+\newblock Time series database.
 \newblock Accessed: [9.7.2026].
 
 \bibitem[{Deutsche Bundesbank}, 2025b]{bundesbank_bonds}
@@ -21,15 +26,15 @@ Caldara, D. and Iacoviello, M. (2022).
 \newblock Yields of debt securities outstanding: 10-year maturity.
 \newblock Accessed: [9.7.2026].
 
-\bibitem[{Deutsche Börse}, 2025]{dax_index}
-{Deutsche Börse} (2025).
-\newblock Dax historical data.
-\newblock Accessed: [9.7.2026].
+\bibitem[{European Central Bank}, 2025a]{ecb_preestr}
+{European Central Bank} (2025a).
+\newblock {Euro Short-Term Rate ({Pre-\texteuro}STR)}.
+\newblock Accessed: [11.7.2026].
 
-\bibitem[{European Central Bank}, 2025]{ecb_estr}
-{European Central Bank} (2025).
-\newblock Euro short-term rate (€str).
-\newblock Accessed: [9.7.2026].
+\bibitem[{European Central Bank}, 2025b]{ecb_estr}
+{European Central Bank} (2025b).
+\newblock {Euro Short-Term Rate ({\texteuro}STR)}.
+\newblock Accessed: [11.7.2026].
 
 \bibitem[{European Central Bank}, 2026]{ecb2026glossary}
 {European Central Bank} (2026).
@@ -37,5 +42,18 @@ Caldara, D. and Iacoviello, M. (2022).
 \newblock Monetary Policy Glossary,
   \url{https://www.ecb.europa.eu/services/glossary/html/act6o.en.html}.
 \newblock Accessed: [9.7.2026].
+
+\bibitem[Winkler, 2025]{winkler2025}
+Winkler, E. (2025).
+\newblock {Modellierung von Non-Maturity Deposits aus Bankensicht}.
+\newblock Master's thesis, Friedrich-Alexander-Universit{\"a}t
+  Erlangen-N{\"u}rnberg.
+\newblock Supervisor: Dr.\ Matthias Fischer.
+
+\bibitem[{Yahoo Finance}, 2026]{yahoo_finance_dax}
+{Yahoo Finance} (2026).
+\newblock {DAX PERFORMANCE-INDEX} (\textasciicircum{}gdaxi).
+\newblock \url{https://finance.yahoo.com/quote/\%5EGDAXI/}.
+\newblock Accessed: 9 July 2026.
 
 \end{thebibliography}

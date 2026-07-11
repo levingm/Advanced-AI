@@ -3,11 +3,12 @@
 \contentsline {section}{\numberline {2}Related Work}{3}{section.2}%
 \contentsline {section}{\numberline {3}Methods}{3}{section.3}%
 \contentsline {subsection}{\numberline {3.1}Problem Setting and Data}{3}{subsection.3.1}%
-\contentsline {subsection}{\numberline {3.2}Exploratory Data Analysis}{4}{subsection.3.2}%
-\contentsline {subsection}{\numberline {3.3}Models}{4}{subsection.3.3}%
-\contentsline {subsection}{\numberline {3.4}Evaluation Strategy}{4}{subsection.3.4}%
+\contentsline {subsection}{\numberline {3.2}Interpolation Methods}{3}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.3}Exploratory Data Analysis}{4}{subsection.3.3}%
+\contentsline {subsection}{\numberline {3.4}Models}{4}{subsection.3.4}%
+\contentsline {subsection}{\numberline {3.5}Evaluation Strategy}{4}{subsection.3.5}%
 \contentsline {section}{\numberline {4}Results}{4}{section.4}%
 \contentsline {section}{\numberline {5}Discussion}{4}{section.5}%
 \contentsline {section}{\numberline {6}Conclusion and Outlook}{4}{section.6}%
-\contentsline {section}{\numberline {A}Appendix: Additional Figures and Tables}{5}{appendix.A}%
-\contentsline {section}{\numberline {B}Appendix: Code}{5}{appendix.B}%
+\contentsline {section}{\numberline {A}Appendix: Additional Figures and Tables}{6}{appendix.A}%
+\contentsline {section}{\numberline {B}Appendix: Code}{6}{appendix.B}%

@@ -7,6 +7,7 @@
 \usepackage[T1]{fontenc}
 \usepackage[english]{babel}          % switch to german if you write in German
 \usepackage{amsmath,amssymb}
+\usepackage{textcomp}
 \usepackage{graphicx}
 \usepackage{booktabs}                % nicer tables
 \usepackage{caption}
@@ -172,19 +173,55 @@ After a brief introduction this paper will go over the data used to predict the 
 \label{sec:methods}
 
 \subsection{Problem Setting and Data}
+% - Target variable definition -> CHECK if we want to use EINLAGEVOLUMEN?
+The target variable $\mathrm{Einlagevolumen}_t$is monthly end-of-period levels of overnight deposits held by private households, published by the Deutsche Bundesbank \citep{bundesbank_data}. The dataset covers the period January 2003 to December 2025. Six covariates are used to enrich the data set.\\ 
 % - Data source(s), time period, granularity MUST CHECK REFS
-All datapoints are based on January 2003 - December 2025:\\
-- The overnight deposit volume and interest rate was sourced from Deutsche Bundesbank and consist of monthly end-of-period levels\citep{bundesbank_data}.\\
-- The Euro Short-Term Rate $\text{€STR}$ sourced from the ECB, consisting of data for each business day\citep{ecb_estr}.\\
-- The German geopolitical risk index $\mathrm{GPRC\_DEU}$ sourced monthly\citep{gpr_index}.\\
-- The month-on-month inflation $\mathrm{MoM-Inflation}$ sourced monthly\citep{destatis_inflation}.\\
-- The DAX index sourced with yfinance on business days\citep{dax_index}.\\
-- The 10-year German bond yield $\mathrm{10Y~Bond}$ sourced on business days\citep{bundesbank_bonds}. \\
+The Euro Short-Term Rate ($\text{€STR}$), sourced from the ECB
+\citep{ecb_estr}, is available at daily frequency and captures
+the average overnight borrowing rate of banks in the euro area.
+As each published value reflects the previous business day's
+transactions, it constitutes a direct, transaction-based measure
+of interbank market conditions. While $\text{€STR}$ was
+officially introduced in October 2019, the sample period extends
+back to January 2003. For the period March 2017 to September
+2019, the Pre-$\text{€STR}$ \citep{ecb_preestr} is used as a
+direct predecessor series. For earlier observations, the series
+is reconstructed following \citet[Ch.~5.2]{winkler2025}.
+The German geopolitical risk index ($\mathrm{GPRC\_DEU}$) published on a monthly basis \citep{gpr_index}, quantifies the geopolitical risk in Germany by using automated text search in the U.S. newspapers \textit{New York Times}, \textit{Chicago Tribune} and \textit{Washington Post}.
+The month-on-month inflation ($\mathrm{MoM-Inflation}$) sourced from Destatis \citep{destatis_inflation}, calculates the
+percentage change in the Consumer Price Index relative to the
+preceding month.
+The DAX daily closing prices are obtained via the yfinance Python library  \citep{yfinance}, retrieving data from Yahoo Finance \citep{yahoo_finance_dax} for the ticker \texttt{\^{}GDAXI}.
+The 10-year German government bond yield ($\mathrm{10Y~Bond}$),
+sourced at business-day frequency from the Deutsche Bundesbank
+\citep{bundesbank_bonds}. 
+% - Preprocessing steps
+\subsection{Interpolation Methods}
+% ---------------------------------------------------------------------
+% NEEDS TO BE WRITTEN
+% ---------------------------------------------------------------------
+To get all of the data points into daily rates different methods have been applied to ensure the best possible data while reaching the wanted granularity:
+
+ADD METHODS HERE SEE 5.2 Masterthesis
+
+% ---------------------------------------------------------------------
+% NEEDS TO BE WRITTEN
+% ---------------------------------------------------------------------
+The target variable and all covariates can be seen down below.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{figures/overview.png}
+    \caption{Time series of all variables over the sample period
+    January 2003 -- December 2025. All monthly series are shown
+    after PCHIP interpolation to daily frequency. The
+    $\text{€STR}$ series begins in October 2019 following its
+    introduction by the ECB.}
+    \label{fig:timeseries_overview}
+\end{figure}
 
 Overnight deposits or non-maturity deposits are deposits with next-day maturity. Consisting mainly of fully transferable deposits and deposits non-transferable deposits that can be converted by end of the next business day \citep{ecb2026glossary}. 
 
-% - Target variable definition
-The target variable is the daily volume of overnight deposits $V_t$ held by private household, sourced from Deutsche Bundesbank.
 % - Jump-problem 
 % -------------------------------------------------------------------
 % THIS SECTION MIGHT GO SOMEWHERE ELSE
@@ -192,11 +229,7 @@ The target variable is the daily volume of overnight deposits $V_t$ held by priv
 Predicting the actual volume comes with a hand full of problems since:\\
 - reaches a new high/low many times -> can't be predicted by many(/any??) machine learning algorithm
 - Solution: Transform the target variable into the difference in change between two days  
-% - Preprocessing steps
-To get all of the data points into daily rates different methods have been applied to ensure the best possible data while reaching the wanted granularity:
-\\
-ADD METHODS HERE SEE 5.2 Masterthesis
-\\
+
 \subsection{Exploratory Data Analysis}
 % - Descriptive statistics (table)
 % - Key visualizations (time series plots, distributions, correlations)

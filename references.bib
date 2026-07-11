@@ -18,26 +18,35 @@
 
 @misc{bundesbank_data,
   author = {{Deutsche Bundesbank}},
-  title = {Bank statistics: Deposits of domestic non-financial corporations and households},
-  year = {2025},
-  url = {https://www.bundesbank.de/en/statistics/banks-and-other-financial-corporations/banks/banking-statistics-816050},
-  note         = {Accessed: [9.7.2026]}
+  title  = {Time series database},
+  year   = {2025},
+  url    = {https://www.bundesbank.de/en/statistics},
+  note   = {Accessed: [9.7.2026]}
 }
+
 
 @misc{ecb_estr,
   author = {{European Central Bank}},
-  title = {Euro short-term rate (€STR)},
+  title = {{Euro Short-Term Rate ({\texteuro}STR)}},
   year = {2025},
-  url = {https://data.ecb.europa.eu/data/datasets/STR/STR.D.DE0.000.EUR},
-  note         = {Accessed: [9.7.2026]}
+  url = {https://data.ecb.europa.eu/data/datasets/EST/dashboard?dataset%5B0%5D=Euro%20short-term%20rate%20%28EST%29&advFilterDataset%5B0%5D=Euro%20short-term%20rate%20%28EST%29&showDatasetModal=false},
+  note         = {Accessed: [11.7.2026]}
+}
+
+@misc{ecb_preestr,
+  author = {{European Central Bank}},
+  title = {{Euro Short-Term Rate ({Pre-\texteuro}STR)}},
+  year = {2025},
+  url = {https://data.ecb.europa.eu/data/datasets/MMSR/MMSR.B.U2._X._Z.S12._Z.U.BO.VL.D76.MA._Z._Z.EUR._Z},
+  note         = {Accessed: [11.7.2026]}
 }
 
 @misc{gpr_index,
   author = {Caldara, Dario and Iacoviello, Matteo},
-  title = {Geopolitical Risk Index (GPRC_DEU)},
+  title = {Geopolitical Risk Index ({GPRC\_DEU})}, 
   year = {2022},
   url = {https://www.matteoiacoviello.com/gpr.htm},
-  note         = {Accessed: [9.7.2026]}
+  note         = {Accessed: [11.7.2026]}
 }
 
 @misc{destatis_inflation,
@@ -48,12 +57,20 @@
   note         = {Accessed: [9.7.2026]}
 }
 
-@misc{dax_index,
-  author = {{Deutsche Börse}},
-  title = {DAX Historical Data},
-  year = {2025},
-  url = {https://www.dax-indices.com},
-  note         = {Accessed: [9.7.2026]}
+@misc{yfinance,
+  author       = {Aroussi, Ran},
+  title        = {yfinance: Download market data from Yahoo! Finance's API},
+  year         = {2025},
+  howpublished = {\url{https://ranaroussi.github.io/yfinance/}},
+  note         = {Accessed: 9 July 2026}
+}
+
+@misc{yahoo_finance_dax,
+  author       = {{Yahoo Finance}},
+  title        = {{DAX PERFORMANCE-INDEX} (\textasciicircum{}GDAXI)},
+  year         = {2026},
+  howpublished = {\url{https://finance.yahoo.com/quote/\%5EGDAXI/}},
+  note         = {Accessed: 9 July 2026}
 }
 
 @misc{bundesbank_bonds,
@@ -62,4 +79,13 @@
   year = {2025},
   url = {https://www.bundesbank.de/en/statistics/money-and-capital-markets/yields/yields-of-debt-securities-outstanding-619494},
   note         = {Accessed: [9.7.2026]}
+}
+
+@mastersthesis{winkler2025,
+  author = {Winkler, Elias},
+  title  = {{Modellierung von Non-Maturity Deposits aus Bankensicht}},
+  school = {Friedrich-Alexander-Universit{\"a}t Erlangen-N{\"u}rnberg},
+  year   = {2025},
+  type   = {Master's Thesis},
+  note   = {Supervisor: Dr.\ Matthias Fischer}
 }

@@ -103,7 +103,10 @@ If they do not have such a model or the model does not work it is impossible for
 %   4. Outline: structure of the paper as a story line (not just
 %      "Section 2 analyzes ..." -- LINK sections, motivate why each is
 %      needed; see example paragraph below, p.19)
-After a brief introduction this paper will go over the data used to predict the deposit-volume NEEDS VARIABLE $V_t$.  
+After a brief introduction this paper will go over the data used to predict the deposit-volume NEEDS VARIABLE $V_t$. 
+
+Overnight deposits or non-maturity deposits are deposits with next-day maturity. Consisting mainly of fully transferable deposits and deposits non-transferable deposits that can be converted by end of the next business day \citep{ecb2026glossary}. 
+
 % Also: when/where can the method be used, why/for whom is it relevant.
 % Avoid unsupported claims like "... is important" -- give arguments,
 % and consider a quotation from a top-tier paper to support relevance
@@ -174,7 +177,7 @@ After a brief introduction this paper will go over the data used to predict the 
 
 \subsection{Problem Setting and Data}
 % - Target variable definition -> CHECK if we want to use EINLAGEVOLUMEN?
-The target variable $\mathrm{Einlagevolumen}_t$is monthly end-of-period levels of overnight deposits held by private households, published by the Deutsche Bundesbank \citep{bundesbank_data}. The dataset covers the period January 2003 to December 2025. Six covariates are used to enrich the data set.\\ 
+The target variable $\mathrm{Einlagevolumen}$is monthly end-of-period levels of overnight deposits held by private households, published by the Deutsche Bundesbank \citep{bundesbank_data}. The dataset covers the period January 2003 to December 2025. Six covariates are used to enrich the data set.\\ 
 % - Data source(s), time period, granularity MUST CHECK REFS
 The Euro Short-Term Rate ($\text{€STR}$), sourced from the ECB
 \citep{ecb_estr}, is available at daily frequency and captures
@@ -196,19 +199,24 @@ The 10-year German government bond yield ($\mathrm{10Y~Bond}$),
 sourced at business-day frequency from the Deutsche Bundesbank
 \citep{bundesbank_bonds}. 
 % - Preprocessing steps
-\subsection{Interpolation Methods}
-% ---------------------------------------------------------------------
-% NEEDS TO BE WRITTEN
-% ---------------------------------------------------------------------
-To get all of the data points into daily rates different methods have been applied to ensure the best possible data while reaching the wanted granularity:
-
-ADD METHODS HERE SEE 5.2 Masterthesis
-
-% ---------------------------------------------------------------------
-% NEEDS TO BE WRITTEN
-% ---------------------------------------------------------------------
-The target variable and all covariates can be seen down below.
-
+\paragraph{Interpolation Methods}
+Since multiple variables are published at monthly frequency, they therefore require interpolation to a daily grid before model training. 
+Following \citet[Ch.~5.2]{winkler2025}, piecewise cubic Hermite interpolating polynomial (PCHIP) interpolation—introduced by \cite{fritsch_carlson}—outperforms than linear and autoregressive methods for financial time series.
+PCHIP interpolation is applied to $\mathrm{GPRC\_DEU}$ and
+$\mathrm{MoM~Inflation}$, preserving local monotonicity of the input series and avoiding artificial overshoots between monthly observations \citep{fritsch_carlson}.
+The $\mathrm{Einlagevolumen}$ and $\mathrm{Einlagezinssatz}$
+series, as well as the three-period $\text{€STR}$ reconstruction
+described above, are constructed following
+the methodology of \citet[Ch.~5.1--5.2]{winkler2025}. The DAX
+closing prices and the 10-year bond yield are natively available
+at daily frequency and require no interpolation.
+For variables available at business-day frequency
+($\text{€STR}$ and $\mathrm{10Y~Bond}$), weekend and public
+holiday gaps are handled via forward-fill, carrying the last
+observed value forward to the following business day. This
+ensures a complete daily index across the full sample period
+while avoiding the introduction of artificial variation on
+non-trading days. The following figure illustrates illustrates all variables over the full sample period after interpolation to daily frequency.
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=\textwidth]{figures/overview.png}
@@ -219,29 +227,119 @@ The target variable and all covariates can be seen down below.
     introduction by the ECB.}
     \label{fig:timeseries_overview}
 \end{figure}
-
-Overnight deposits or non-maturity deposits are deposits with next-day maturity. Consisting mainly of fully transferable deposits and deposits non-transferable deposits that can be converted by end of the next business day \citep{ecb2026glossary}. 
-
 % - Jump-problem 
-% -------------------------------------------------------------------
-% THIS SECTION MIGHT GO SOMEWHERE ELSE
-% -------------------------------------------------------------------
-Predicting the actual volume comes with a hand full of problems since:\\
-- reaches a new high/low many times -> can't be predicted by many(/any??) machine learning algorithm
-- Solution: Transform the target variable into the difference in change between two days  
+As evident from Figure~\ref{fig:timeseries_overview}, the $\mathrm{Einlagevolumen}$ exhibits a clear upward trend throughout the timeline, indicating nonstationarity in the mean. To this first differencing is applied, to obtain a stationary target series and to limit accumulating directional errors \citep{box2015},
+as illustrated in Figure~\ref{fig:diff_volume}. Second differencing was rejected do to over-differencing.
 
-\subsection{Exploratory Data Analysis}
-% - Descriptive statistics (table)
-% - Key visualizations (time series plots, distributions, correlations)
-HERE PLOTS OF THE DATA ARE SHOWN
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{figures/diff_volume.png}
+    \caption{First difference of $\mathrm{Einlagevolumen}_t$ over 
+    the full sample period January 2003 -- December 2025. The series 
+    fluctuates around zero throughout, confirming stationarity after 
+    differencing. Increased volatility from 2022 onward coincides 
+    with the ECB interest rate tightening cycle.}
+    \label{fig:diff_volume}
+\end{figure}
+After interpolation to daily frequency, the dataset comprises
+1517 observations covering the full sample period January
+2003 to December 2025.
+
 \subsection{Models}
-% - Mathematical/methodological background of each model used
-% - Justification for model choice(s): interpretable vs. black-box
-% Example equation environment (double-check every formula carefully):
+\label{subsec:models}
+All models produce a $\mathrm{PROGNOSEHORIZONT} = 100$-step-ahead
+forecast of $\Delta y_t$ from a $\mathrm{GEDAECHTNIS} = 30$-day lookback
+window, using only information available up to the training cutoff
+(no future covariate values are used as input). Two naive benchmarks
+and three ``sequence'' models share this forecasting setup; a
+Temporal Fusion Transformer (TFT) is evaluated separately due to its
+distinct handling of known vs.\ unknown future covariates. The models
+appear in order of increasing complexity, from fully
+interpretable benchmarks to black-box architectures. This allows an
+evaluation of whether additional model complexity translates into
+forecasting gains.
+
+\paragraph{Naive benchmarks.}
+Random Walk extrapolates the last observed daily change at a constant
+rate,
 \begin{equation}
-    \hat{y}_{t+h} = f(X_t, X_{t-1}, \dots, X_{t-p}; \theta) + \varepsilon_t
-    \label{eq:general_forecast}
+    \hat{y}_{t_0+h} = y_{t_0} + h \cdot \Delta y_{t_0}, \qquad h = 1, \dots, 100,
+    \label{eq:naive_rw}
 \end{equation}
+which corresponds to an ARIMA$(0,1,0)$ process with drift
+\citep[Ch.~4.1.2]{box2015}. Naive Hold instead assumes the level
+remains constant, $\hat{y}_{t_0+h} = y_{t_0}$. Both benchmarks are
+fully interpretable, require no covariates, serving as a lower
+bound against which the higher complexity of the remaining models
+must be justified.
+
+\paragraph{Linear Regression (Ridge).}
+A multi-output ridge regression maps the flattened lookback window
+(target and covariates, optionally including lags) to the full
+100-step \\CHECK\\ forecast vector directly (a ``direct'' rather than
+``iterated'' multi-step strategy), regularized by an $\ell_2$
+penalty $\alpha$ selected via time-series cross-validation
+\citep[Ch.~3]{hastie2009}. As a linear model, Ridge retains full
+interpretability of covariate effects through its coefficients,
+at the cost of being unable to capture non-linear relationships
+between covariates and deposit behavior.
+
+\paragraph{XGBoost.}
+Gradient-boosted regression trees are trained on the same flattened
+input representation, with hyperparameters (max depth, learning rate,
+subsample ratio) selected via grid search under
+\texttt{TimeSeriesSplit} cross-validation to avoid look-ahead bias in
+model selection \citep{chen2016}. Boosted trees can capture
+non-linear covariate interactions that Ridge cannot
+\citep[Ch.~10]{hastie2009}, while remaining moderately interpretable
+through feature importance measures -- positioning XGBoost as an
+intermediate step between the fully interpretable linear model and
+the black-box neural architectures that follow.
+
+\paragraph{Feedforward Neural Network (FFN).}
+A fully connected network with two hidden layers (128, 64 units,
+ReLU activation) is trained to directly predict the 100-step output
+vector. Following the general formulation of a feedforward layer
+\citep[Ch.~11]{hastie2009} (cf.\ also \citet[Ch.~4.2]{winkler2025}),
+\begin{equation}
+    z_j = \sum_{i=1}^{n} w_{ji} x_i + b_j, \qquad a_j = \phi(z_j),
+    \label{eq:ffn_neuron}
+\end{equation}
+where $\phi$ is the ReLU activation for hidden layers. Training uses
+Adam with early stopping on a held-out validation slice (last 15\% of
+the training window, chronologically), monitoring validation MAE with
+a patience of 20 iterations. Unlike Ridge and XGBoost, the FFN offers
+no direct interpretability of individual covariate effects, trading
+transparency for greater representational flexibility.
+
+\paragraph{Temporal Fusion Transformer (TFT).}
+Unlike the sequence models above, the TFT explicitly distinguishes
+between \emph{known} future inputs (deterministically known for the
+entire forecast horizon -- here, calendar features: weekday,
+month-end indicator, day-of-month) and \emph{unknown} future inputs
+(the six macro-financial covariates, whose future values are not
+known and are therefore held at their last observed value throughout
+the forecast horizon, consistent with the realistic no-future-leakage
+scenario described in Section~\ref{subsec:data}) \citep{lim2021}.
+The model is trained with early stopping (patience 5 epochs) on
+validation loss. Despite being the most complex model considered,
+the TFT's attention mechanism was explicitly designed by
+\citet{lim2021} to offer a degree of interpretability -- e.g.\ via
+variable selection weights -- that purely black-box architectures
+typically lack, distinguishing it from a conventional deep learning
+model of comparable complexity.
+
+\paragraph{Ensembling.}
+Each sequence model is fit \(S\) times with different random seeds
+(and, when \(S>1\), bootstrap-resampled training data) to form an
+ensemble; point forecasts are the ensemble mean, and 90\%/98\%
+confidence bands are the corresponding empirical percentiles
+(5/95 and 1/99) across ensemble paths, following the same
+visualization convention as \citet[Ch.~5.4]{winkler2025}.
+
+All models are evaluated under the identical rolling-origin scheme
+described below, allowing a direct, like-for-like comparison across
+the full interpretability--complexity spectrum.
 
 \subsection{Evaluation Strategy}
 % - Train/test split or rolling-origin evaluation

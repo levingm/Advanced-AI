@@ -3,12 +3,17 @@
 \contentsline {section}{\numberline {2}Related Work}{3}{section.2}%
 \contentsline {section}{\numberline {3}Methods}{3}{section.3}%
 \contentsline {subsection}{\numberline {3.1}Problem Setting and Data}{3}{subsection.3.1}%
-\contentsline {subsection}{\numberline {3.2}Interpolation Methods}{3}{subsection.3.2}%
-\contentsline {subsection}{\numberline {3.3}Exploratory Data Analysis}{4}{subsection.3.3}%
-\contentsline {subsection}{\numberline {3.4}Models}{4}{subsection.3.4}%
-\contentsline {subsection}{\numberline {3.5}Evaluation Strategy}{4}{subsection.3.5}%
-\contentsline {section}{\numberline {4}Results}{4}{section.4}%
-\contentsline {section}{\numberline {5}Discussion}{4}{section.5}%
-\contentsline {section}{\numberline {6}Conclusion and Outlook}{4}{section.6}%
-\contentsline {section}{\numberline {A}Appendix: Additional Figures and Tables}{6}{appendix.A}%
-\contentsline {section}{\numberline {B}Appendix: Code}{6}{appendix.B}%
+\contentsline {paragraph}{Interpolation Methods}{4}{section*.3}%
+\contentsline {subsection}{\numberline {3.2}Models}{4}{subsection.3.2}%
+\contentsline {paragraph}{Naive benchmarks.}{4}{section*.6}%
+\contentsline {paragraph}{Linear Regression (Ridge).}{4}{section*.7}%
+\contentsline {paragraph}{XGBoost.}{4}{section*.8}%
+\contentsline {paragraph}{Feedforward Neural Network (FFN).}{6}{section*.9}%
+\contentsline {paragraph}{Temporal Fusion Transformer (TFT).}{6}{section*.10}%
+\contentsline {paragraph}{Ensembling.}{6}{section*.11}%
+\contentsline {subsection}{\numberline {3.3}Evaluation Strategy}{7}{subsection.3.3}%
+\contentsline {section}{\numberline {4}Results}{7}{section.4}%
+\contentsline {section}{\numberline {5}Discussion}{7}{section.5}%
+\contentsline {section}{\numberline {6}Conclusion and Outlook}{7}{section.6}%
+\contentsline {section}{\numberline {A}Appendix: Additional Figures and Tables}{8}{appendix.A}%
+\contentsline {section}{\numberline {B}Appendix: Code}{8}{appendix.B}%

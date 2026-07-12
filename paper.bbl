@@ -6,10 +6,21 @@ Aroussi, R. (2025).
 \newblock \url{https://ranaroussi.github.io/yfinance/}.
 \newblock Accessed: 9 July 2026.
 
+\bibitem[Box et~al., 2015]{box2015}
+Box, G. E.~P., Jenkins, G.~M., Reinsel, G.~C., and Ljung, G.~M. (2015).
+\newblock {\em {Time Series Analysis: Forecasting and Control}}.
+\newblock John Wiley \& Sons, Hoboken, New Jersey, 5th edition.
+
 \bibitem[Caldara and Iacoviello, 2022]{gpr_index}
 Caldara, D. and Iacoviello, M. (2022).
 \newblock Geopolitical risk index ({GPRC\_DEU}).
 \newblock Accessed: [11.7.2026].
+
+\bibitem[Chen and Guestrin, 2016]{chen2016}
+Chen, T. and Guestrin, C. (2016).
+\newblock {XGBoost: A Scalable Tree Boosting System}.
+\newblock In {\em Proceedings of the 22nd ACM SIGKDD International Conference
+  on Knowledge Discovery and Data Mining}, pages 785--794.
 
 \bibitem[{Destatis}, 2025]{destatis_inflation}
 {Destatis} (2025).
@@ -42,6 +53,23 @@ Caldara, D. and Iacoviello, M. (2022).
 \newblock Monetary Policy Glossary,
   \url{https://www.ecb.europa.eu/services/glossary/html/act6o.en.html}.
 \newblock Accessed: [9.7.2026].
+
+\bibitem[Fritsch and Carlson, 1980]{fritsch_carlson}
+Fritsch, F.~N. and Carlson, R.~E. (1980).
+\newblock Monotone piecewise cubic interpolation.
+\newblock {\em SIAM Journal on Numerical Analysis}, 17(2):238--246.
+
+\bibitem[Hastie et~al., 2009]{hastie2009}
+Hastie, T., Tibshirani, R., and Friedman, J. (2009).
+\newblock {\em {The Elements of Statistical Learning: Data Mining, Inference,
+  and Prediction}}.
+\newblock Springer, 2nd edition.
+
+\bibitem[Lim et~al., 2021]{lim2021}
+Lim, B., Ar{\i}k, S.~O., Loeff, N., and Pfister, T. (2021).
+\newblock {Temporal Fusion Transformers for Interpretable Multi-horizon Time
+  Series Forecasting}.
+\newblock {\em International Journal of Forecasting}, 37(4):1748--1764.
 
 \bibitem[Winkler, 2025]{winkler2025}
 Winkler, E. (2025).

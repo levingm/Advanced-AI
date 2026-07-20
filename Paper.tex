@@ -4,6 +4,7 @@
 % Packages
 % ---------------------------------------------------------------------------
 \usepackage[utf8]{inputenc}
+\usepackage{microtype}
 \usepackage[T1]{fontenc}
 \usepackage[english]{babel}          % switch to german if you write in German
 \usepackage{amsmath,amssymb}
@@ -53,8 +54,7 @@
 % Title, authors, affiliation
 % ---------------------------------------------------------------------------
 \title{\textbf{Paper Title: Forecasting X with Y --- A Comparative Evaluation}}
-\author[1]{Author One}
-\author[1]{Author Two}
+\author[1]{David et al.}
 \affil[1]{LMU Munich School of Management, Institute of AI in Management}
 \date{\today}
 
@@ -78,11 +78,10 @@
 % (2) Problem statement -- 1 sentence.
 % (3) Methodology -- 1-2 sentences.
 % (4) Quantitative outcome / takeaway -- 1-2 sentences.
-    Depositvolume is a the amount of cash sitting inside the money market account.
-    For a bank it is of great interest to predict the depositvolume, in order to know the amount of money they can work with.
-    In this project we focused on different variables and machine learning methods to predict the depositvolume.
 
-    Placeholder abstract text (target: $\leq 150$ words, no citations).
+\noindent Liquidity management ensures that a bank has sufficient cash to fulfill its short-term obligations, while minimizing the cost of holding an excess of it. One of the most important sources of liquidity for a bank are non-maturity deposits. Therefore, forecasting the volume of these deposits is crucial for the liquidity management process of a bank. However, despite the economic importance of deposit volume prediction, the scientific research is limited, meaning there is not an established scientific framework to correctly model them. Here, we build different machine learning models for deposit volume prediction and evaluate whether model-robustness provides more accurate results. + (Maybe compare with Elias models) ++ Main results?. We expect that this study contributes to the development of more specialized approaches for modeling non-maturity deposits, while also support future research on other practical banking applications besides liquidity management, including strategic planning, interest rate risk management, and profitability analysis. 
+\break
+\textit{    Placeholder abstract text (target: $\leq 150$ words, no citations).}
 \end{abstract}
 
 \newpage
@@ -95,17 +94,19 @@
 % Guidance (course slides + writing-process deck p.17):
 % Four-part structure:
 %   1. Motivate relevance of the problem (give context)
-Since non-maturing deposits have no contractual maturity it is essential for banks to have a model predicting the volume. 
+% Since non-maturing deposits have no contractual maturity it is essential for banks to have a model predicting the volume. 
+
 %   2. State the problem briefly
-If they do not have such a model or the model does not work it is impossible for the liquidity management to work properly.
+% If they do not have such a model or the model does not work it is impossible for the liquidity management to work properly.
+
 %   3. Repeat contribution, e.g. as an explicit, highlighted research
 %      question / hypothesis
 %   4. Outline: structure of the paper as a story line (not just
 %      "Section 2 analyzes ..." -- LINK sections, motivate why each is
 %      needed; see example paragraph below, p.19)
-After a brief introduction this paper will go over the data used to predict the deposit-volume NEEDS VARIABLE $V_t$. 
+% After a brief introduction this paper will go over the data used to predict the deposit-volume NEEDS VARIABLE $V_t$. 
 
-Overnight deposits or non-maturity deposits are deposits with next-day maturity. Consisting mainly of fully transferable deposits and deposits non-transferable deposits that can be converted by end of the next business day \citep{ecb2026glossary}. 
+% Overnight deposits or non-maturity deposits are deposits with next-day maturity. Consisting mainly of fully transferable deposits and deposits non-transferable deposits that can be converted by end of the next business day \citep{ecb2026glossary}. 
 
 % Also: when/where can the method be used, why/for whom is it relevant.
 % Avoid unsupported claims like "... is important" -- give arguments,
@@ -113,18 +114,22 @@ Overnight deposits or non-maturity deposits are deposits with next-day maturity.
 % (see "Quotations", p.31: use rarely, 0-5 per paper total).
 \section{Introduction}
 \label{sec:introduction}
-
 % --- Part 1: Relevance / context ---
-
 % --- Part 2: Problem statement ---
-
 % --- Part 3: Research question(s) / contribution, own highlighted paragraph ---
-\begin{researchquestion}
-\textbf{Research Question(s):}
-\begin{itemize}
-    \item RQ1: \dots
-\end{itemize}
-\end{researchquestion}
+The Basel Committee on Banking Supervision \citep{bcbs2016irrbb} defines non-maturity deposits (NMDs) as liabilities without a contractual maturity where the depositor is free to withdraw at any time. They consist mainly of fully transferable deposits and deposits non-transferable deposits that can be converted
+by end of the next business day. The interest paid from NMDs is significantly below other products issued by the banks. Moreover, since there is no fixed maturity date, banks reserve the right to change this interest rate at any time. Therefore, because of their stability and low-cost, NMDs are an important source of funding for banks. Especially for German banks, NMDs nowadays represent the most important funding source after exhibiting a dynamic growth in the aftermath of the financial crisis of 2008 \citep{schlueter2015bank}. Considering this information, it becomes clear how important is the study of NMDs deposits for banks liquidity management, the process of assessing the liquidity needs of a bank and supplying or absorbing the appropriate amount of liquidity through open market operations \citep{ecb2011monetary}. However, because of their stochastic nature, the study of these products become, to say the least, extremely challenging. Despite its importance, the academic research on this topic is still scarce. Recent years have seen a growing interest on the subject in the form of graduate theses, journals and papers \citep{winkler2025, marena2022nonmaturing}. Nevertheless, this current literature presents a wide range of approaches, from economic to statistical and mathematical models, there is yet to be a general accepted scientific consensus to the optimal methodology for modeling NMDs. Hence, the need for a structured and effective methodology for the forecasting of these financial products is evident. 
+\break
+\indent This work addresses the previously mentioned research gap by developing and evaluating a comparative framework for NMD volume forecasting using naive benchmarks, statistical models, and machine-learning models, with the objective of identifying the model specification that produces the most accurate and robust forecasts by systematically evaluating alternative models, covariate sets and time periods. Although the study is motivated by NMD modeling, the empirical analysis is conducted using publicly available German household overnight deposit data, which serves as a representation for aggregate NMD volumes. The contribution of this work resides in the development of a comparative forecasting framework that examines whether model complexity results in more accurate forecasts and how different selections of financial covariates influence forecasting performance. Moreover, the models are tested across different timelines/economic periods. This implies that different variables, models, and periods of time must all be compared not only to obtain the best possible NMD volume forecast, but also to explain the results using economic reasoning. Finally, all results are obtained using a realistic evaluation design, meaning that no future information on the covariates is used at the forecast date. 
+\break
+\indent The remainder of this paper is structured as follows. Section 2 provides related literature on NMD modeling and forecasting, and positions this study within this research. Section 3 presents the data and forecasting methodology, including data preparation, model explanation, covariates, and rolling-origin scheme. Section 4 reports and compares the results. Finally Section 6 concludes the paper.
+
+%\begin{researchquestion}
+%\textbf{Research Question(s):}
+%\begin{itemize}
+%    \item RQ1: \dots
+%\end{itemize}
+%\end{researchquestion}
 
 % --- Part 4: Outline / roadmap, written as a connected story, not a list.
 % Example (adapt), from LMU v2 p.19:
@@ -146,6 +151,7 @@ Overnight deposits or non-maturity deposits are deposits with next-day maturity.
 % - Final paragraph: wrap-up stressing novelty relative to the above.
 % - Avoid definitive claims like "this is new" -- prefer hedged phrasing,
 %   e.g. "we are not aware of similar research" / "to our best knowledge".
+\clearpage
 \section{Related Work}
 \label{sec:related_work}
 
@@ -177,9 +183,11 @@ Overnight deposits or non-maturity deposits are deposits with next-day maturity.
 
 \subsection{Problem Setting and Data}
 % - Target variable definition -> CHECK if we want to use EINLAGEVOLUMEN?
-The target variable $\mathrm{Einlagevolumen}$is monthly end-of-period levels of overnight deposits held by private households, published by the Deutsche Bundesbank \citep{bundesbank_data}. The dataset covers the period January 2003 to December 2025. Six covariates are used to enrich the data set.\\ 
+Non-maturity deposits (NMDs) data is not publicly available because it reveals sensitive bank information. For this study, we utilize public end-of-period levels of overnight deposits held by private households data, published by the Deutsche Bundesbank \citep{bundesbank_data} as an approximate for NMDs deposits. Household overnight deposits provide an accurate representation since they are a subset of NMDs and account for a substantial share of the total banks' deposit funding \citep{bundesbank2024financing}. Therefore, the aggregate volume of household overnight deposits is influenced by many of the same economic drivers as NMDs. The dataset covers the period January 2003 to December 2025. Six covariates are used to enrich the data set. 
+
 % - Data source(s), time period, granularity MUST CHECK REFS
-The Euro Short-Term Rate ($\text{€STR}$), sourced from the ECB
+
+\textbf{Euro Short-Term Rate ($\text{€STR}$):} sourced from the ECB
 \citep{ecb_estr}, is available at daily frequency and captures
 the average overnight borrowing rate of banks in the euro area.
 As each published value reflects the previous business day's
@@ -189,17 +197,31 @@ officially introduced in October 2019, the sample period extends
 back to January 2003. For the period March 2017 to September
 2019, the Pre-$\text{€STR}$ \citep{ecb_preestr} is used as a
 direct predecessor series. For earlier observations, the series
-is reconstructed following \citet[Ch.~5.2]{winkler2025}.
-The German geopolitical risk index ($\mathrm{GPRC\_DEU}$) published on a monthly basis \citep{gpr_index}, quantifies the geopolitical risk in Germany by using automated text search in the U.S. newspapers \textit{New York Times}, \textit{Chicago Tribune} and \textit{Washington Post}.
-The month-on-month inflation ($\mathrm{MoM-Inflation}$) sourced from Destatis \citep{destatis_inflation}, calculates the
+is reconstructed following \citet[Ch.~5.2]{winkler2025}. The reasoning for including $\text{€STR}$ as a covariate is that a shift from it could cause a shift in the rates banks apply to deposit accounts, meaning a change in the total overnight deposits. 
+
+\textbf{German geopolitical risk index (GPRC\_DEU):} published on a monthly basis \citep{gpr_index}, quantifies the geopolitical risk in Germany by using automated text search in the U.S. newspapers \textit{New York Times}, \textit{Chicago Tribune} and \textit{Washington Post}. Geopolotical context may have an influence because as uncertainty rises, customers might be more drawn to postpone spending and leaving cash in their accounts, leading to an increase in overnight deposits.
+
+\textbf{Month-on-month inflation (MoM-Inflation):}
+ sourced from Destatis \citep{destatis_inflation}, calculates the
 percentage change in the Consumer Price Index relative to the
-preceding month.
-The DAX daily closing prices are obtained via the yfinance Python library  \citep{yfinance}, retrieving data from Yahoo Finance \citep{yahoo_finance_dax} for the ticker \texttt{\^{}GDAXI}.
-The 10-year German government bond yield ($\mathrm{10Y~Bond}$),
+preceding month. Inflation changes how much households spend and save, therefore it could also lead to explain movements of their total overnight deposits. 
+
+
+\textbf{DAX daily closing prices:} obtained via the yfinance Python library  \citep{yfinance}, retrieving data from Yahoo Finance \citep{yahoo_finance_dax} for the ticker \texttt{\^{}GDAXI}. As DAX reflects the changes in the German stock market as well as investor confidence, this may influence the total amount hold by private households.
+
+ 
+\textbf{10-year German government bond yield ({10Y~Bond}):} 
 sourced at business-day frequency from the Deutsche Bundesbank
-\citep{bundesbank_bonds}. 
+\citep{bundesbank_bonds}. As the 10-year old government bond is a relatively safe investment product, private household may be drawn to invest more on them if the rate is sufficiently attractive, investing less in overnight deposits account. 
+
+\textbf{Einlagezinssatz:} it refers to the deposit rate. The more interest households receive on deposits, the more attractive it may be to keep their money there. 
+
+
+
+
 % - Preprocessing steps
-\paragraph{Interpolation Methods}
+\subsection{Data Preprocessing: Interpolation Methods}
+
 Since multiple variables are published at monthly frequency, they therefore require interpolation to a daily grid before model training. 
 Following \citet[Ch.~5.2]{winkler2025}, piecewise cubic Hermite interpolating polynomial (PCHIP) interpolation—introduced by \cite{fritsch_carlson}—outperforms than linear and autoregressive methods for financial time series.
 PCHIP interpolation is applied to $\mathrm{GPRC\_DEU}$ and

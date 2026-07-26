@@ -593,72 +593,44 @@ aggregate household overnight deposits.
 % - Limitations of the analysis (data, methods, assumptions).
 % - Managerial implications for decision-makers.
 % - Broader / future impact.
-The empirical findings from our rolling-origin benchmark provide crucial insights into how distinct algorithmic architectures handle highly autocorrelated, noisy, and regime-shifting financial time series over a $100$-day forecasting horizon. While modern data science literature frequently advocates for deep non-linear models, our evaluation across four distinct macroeconomic interest rate regimes ($2009$--$2025$) reveals a more complex reality. 
 
-This section critically evaluates the performance, structural strengths, and architectural constraints of all six benchmarked models: Feedforward Neural Networks (FFN), Regularized Linear Regression (LinReg), Temporal Fusion Transformers (TFT), Gradient Boosted Trees (XGBoost), Naive Random Walk (Naive RW), and Naive Hold.
+The empirical findings from our rolling-origin benchmark provide crucial insights into how distinct algorithmic architectures handle highly autocorrelated, noisy, and regime-shifting financial time series over a $100$-day forecasting horizon. Contrary to common expectations in modern machine learning literature, our evaluation across four distinct macroeconomic interest rate regimes ($2009$--$2025$) reveals that **simpler, regularized linear models outperform complex non-linear architectures**.
 
-\subsection{Feedforward Neural Networks (FFN): High Capacity and Feature Sensitivity}
-The Feedforward Neural Network achieved the lowest overall Mean Absolute Error ($\text{MAE} = 7.25$~Bn.~\texteuro), representing a $38\%$ reduction in prediction error relative to the Naive RW baseline. The model's hidden architecture ($128 \times 64$ fully connected nodes) successfully captured complex, non-linear relationships between broad macroeconomic indicators and deposit flows—such as non-linear behavioral shifts during negative rate regimes.
+This section critically evaluates the performance, structural strengths, and architectural constraints of all six benchmarked models based on the empirical results presented in Table~\ref{tab:overall_results}.
 
-However, cross-regime variance analysis reveals that the FFN is highly sensitive to the chosen feature space. When supplied with rich, multi-dimensional macroeconomic inputs (\texttt{nur\_makro}), the network generalized exceptionally well. Conversely, when restricted to single-rate covariates (e.g., \texttt{nur\_zinsen}), performance degraded rapidly, producing large error spikes. This highlights that deep architectures require multi-vector regularizing inputs to prevent hidden layers from memorizing historical baseline trends that fail to persist across future rolling origins.
-
-\subsection{Regularized Linear Regression (LinReg): The Gold Standard for Stability}
-While ranking second in absolute MAE ($8.41$~Bn.~\texteuro), the Linear Regression model fitted with Ridge ($L_2$) regularization demonstrated the highest out-of-sample coefficient of determination ($R^2 = 0.255$) among all evaluated approaches. 
+\subsection{Regularized Linear Regression: The Gold Standard for Stability}
+The Ridge-regularized Linear Model achieved the highest overall accuracy ($\text{MAE} = 9.36$~Bn.~\texteuro), outperforming the Last-change benchmark by $20.5\%$ and remaining the **only model to achieve a positive mean $R^2$ ($0.178$)**. 
 
 The structural advantage of $L_2$-regularized linear models in cumulative horizon forecasting lies in their smooth penalty mechanism. When predicting daily volume differences ($\Delta y_t$) over $H = 100$ steps, small daily estimation errors compound linearly or quadratically during final volume reconstruction:
 \begin{equation}
-    \hat{y}_{t_0+h} = y_{t_0} + \sum_{k=1}^{h} \Delta \hat{y}_{t_0+k}
+    \widehat{y}_{t_0+h} = y_{t_0} + \sum_{j=1}^{h} \widehat{\Delta y}_{t_0+j}
 \end{equation}
-The Ridge penalty shrinks non-essential feature weights toward zero, effectively filtering out high-frequency noise. Consequently, during extreme regime shifts—such as the transition from near-zero rates in 2013 to aggressive tightening in 2025—LinReg maintained low error variance ($\pm 11.61$~Bn.~\texteuro), outperforming all complex models in cross-regime stability.
+The Ridge penalty shrinks non-essential feature weights toward zero, effectively filtering out high-frequency interbank noise. Consequently, when supplied with the full feature space (\texttt{All covariates}), Linear Regression maintained superior stability across major interest rate pivots.
 
 \subsection{Temporal Fusion Transformer (TFT): Architectural Overhead vs. Input Constraints}
-The Temporal Fusion Transformer ranked third overall ($\text{MAE} = 9.33$~Bn.~\texteuro, $R^2 = -0.006$). Although TFT is designed specifically for multi-horizon time series forecasting via attention mechanisms and variable selection networks, its full potential was constrained by the strict ex-post evaluation setup.
+The Temporal Fusion Transformer ranked second overall ($\text{MAE} = 10.78$~Bn.~\texteuro). Although TFT is designed specifically for multi-horizon time series forecasting via self-attention mechanisms, its full performance potential was constrained by the strict ex-post evaluation setup.
 
-To prevent look-ahead bias, future values of dynamic covariates were held constant using a naive-hold assumption over the $100$-day horizon. As a result, TFT’s temporal self-attention layers received static input sequences for future steps, neutralizing its primary structural mechanism for dynamic pattern recognition. While TFT successfully outperformed tree-based models and naive baselines, its heavy parameterization added computational overhead without delivering superior accuracy over simpler FFN or Ridge models under static future covariate assumptions.
+To prevent look-ahead bias, future values of dynamic covariates were held constant using a naive-hold assumption over the $100$-day horizon. As a result, TFT’s temporal self-attention layers received static input sequences for dynamic economic drivers, neutralizing its primary structural advantage for capturing future macro trajectories. While TFT successfully outperformed tree ensembles and the naive benchmark, its parameter overhead provided no benefit over Ridge regression under static future covariate assumptions.
 
-\subsection{Gradient Boosted Trees (XGBoost): The Extrapolation Trap}
-XGBoost exhibited severe structural limitations in this experiment, yielding a negative out-of-sample $R^2$ ($-0.307$) and a higher average MAE ($10.56$~Bn.~\texteuro). 
-
-The primary cause of XGBoost's underperformance is the inherent inability of decision trees to extrapolate continuous trends beyond the bounded feature space of the training data. Tree-based algorithms partition the feature space into orthogonal hyper-rectangles, predicting a constant step-value within each leaf node. When forecasting during historical volume highs (such as the $2025$ rate surge), XGBoost cannot project a continuing upward slope; it caps predictions at the maximum values observed in the training set. Furthermore, because XGBoost was trained via direct multi-output regression ($100$ separate tree ensembles), distant forecast steps ($h \to 100$) accumulated significant variance during summation.
-
-\subsection{Naive Baselines: Essential Anchors for Model Validation}
-The inclusion of non-parametric naive benchmarks provides crucial context for evaluating model value:
+\subsection{Feedforward Neural Networks (FFN) and XGBoost: Overfitting and Extrapolation Traps}
+Neither the Feedforward Neural Network ($\text{MAE} = 11.85$~Bn.~\texteuro) nor XGBoost ($\text{MAE} = 12.71$~Bn.~\texteuro) managed to consistently outperform the simple Last-change benchmark ($\text{MAE} = 11.78$~Bn.~\texteuro) on average:
 \begin{itemize}
-    \item \textbf{Naive Random Walk (Naive RW):} Assumes zero daily change ($\Delta y = 0$), resulting in an average MAE of $11.78$~Bn.~\texteuro{} ($R^2 = -0.564$). While competitive during tranquil market conditions, it fails completely during macroeconomic pivots. All primary ML models (FFN, LinReg, TFT, XGBoost) statistically outperformed Naive RW, confirming that ML models extract genuine economic signals.
-    \item \textbf{Naive Hold:} Projects the historical average change, resulting in the worst overall performance ($\text{MAE} = 17.38$~Bn.~\texteuro, $R^2 = -2.246$). This confirms that static trend projection is entirely unsuited for multi-step banking deposit horizons.
+    \item \textbf{FFN Consistency vs. Precision:} Interestingly, the FFN exhibited the lowest standard deviation across forecast origins ($\pm 6.90$~Bn.~\texteuro), indicating high cross-regime consistency. However, its average MAE remained slightly worse than the simple benchmark, showing that unregularized dense layers tend to fit noise in daily volume differences.
+    \item \textbf{XGBoost Extrapolation Limitation:} Decision trees partition the feature space into orthogonal hyper-rectangles and cannot extrapolate continuous trends beyond the bounded range of historical training data. When deposit volumes reached new record levels (such as during the 2022--2025 rate tightening cycle), XGBoost capped predictions at historical leaf thresholds, causing systematic underestimation.
 \end{itemize}
 
+\subsection{Understanding the Out-of-Sample $R^2$ Metric in Time Series}
+As observed in Table~\ref{tab:overall_results}, several models yielded negative $R^2$ values. In multi-step time series forecasting, $R^2$ evaluates predictions against the localized mean of the test evaluation window ($\overline{y}_k$). Because $\overline{y}_k$ is calculated *post-hoc* using future realizations unavailable at the forecast origin, it represents an unrealistically strong benchmark. A negative $R^2$ indicates that a model's multi-step trajectory diverged from this post-hoc mean, rather than indicating zero predictive utility. Therefore, Level MAE serves as our primary metric for practical model ranking.
+
 %\begin{figure}[htbp]
-    %\centering
-    %\includegraphics[width=0.85\textwidth]%{figures/error_accumulation_horizon.png}
-    %\caption{Cumulative forecast error accumulation across all six evaluated model architectures over the $100$-day forecasting horizon.}
+%    \centering
+%    \includegraphics[width=0.85\textwidth]{figures/error_accumulation_horizon.png}
+%    \caption{Cumulative forecast error accumulation across all evaluated model architectures over the $100$-day forecasting horizon.}
 %    \label{fig:error_accumulation}
 %\end{figure}
 
 \subsection{Managerial Implications and Practical Takeaways}
-Table~\ref{tab:model_discussion_summary} summarizes the empirical rankings and architectural trade-offs across all six evaluated models for bank asset-liability management (ALM).
-
-\begin{table}[htbp]
-\centering
-\caption{Comprehensive Benchmark Summary across 4 Interest Rate Regimes ($2009$--$2025$).}
-\label{tab:model_discussion_summary}
-\begin{tabular}{c l l c c c}
-\toprule
-\textbf{Rank} & \textbf{Model} & \textbf{Best Covariate Set} & \textbf{Mean MAE [Bn. \texteuro]} & \textbf{Mean $R^2$} & \textbf{vs. Naive RW} \\
-\midrule
-\#1 & \textbf{FFN} & \texttt{nur\_makro} & \textbf{7.25} $\pm$ 8.84 & 0.181 & $-38\%$ \\
-\#2 & \textbf{LinReg (Ridge)} & \texttt{alle} & 8.41 $\pm$ 11.61 & \textbf{0.255} & $-29\%$ \\
-\#3 & \textbf{TFT} & \texttt{nur\_makro} & 9.33 $\pm$ 12.87 & $-0.006$ & $-21\%$ \\
-\#4 & \textbf{XGBoost} & \texttt{nur\_einlagezins} & 10.56 $\pm$ 11.37 & $-0.307$ & $-10\%$ \\
-\#5 & \textbf{Naive RW} & \texttt{naive} & 11.78 $\pm$ 12.81 & $-0.564$ & Baseline \\
-\#6 & \textbf{Naive Hold} & \texttt{naive} & 17.38 $\pm$ 10.13 & $-2.246$ & $+48\%$ worse \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-For practical bank liquidity management, \textbf{Regularized Linear Regression} offers the most reliable tradeoff between strong interpretability, rapid execution, and high regime-shift stability ($R^2 = 0.255$). Meanwhile, the \textbf{Feedforward Neural Network} provides superior absolute precision when comprehensive macroeconomic indicators are available to guide its non-linear layers.
-\end{comment}
-
+For bank Asset-Liability Management (ALM) and treasury operations, predictability, computational speed, and interpretability are critical. Our benchmark demonstrates that complex deep learning models do not automatically translate into superior deposit forecasts when future macro-covariates are uncertain. **Regularized Linear Regression provides the most robust, interpretable, and accurate framework for 100-day NMD volume forecasting.**
 
 % ---------------------------------------------------------------------------
 % 6. Conclusion and Outlook
@@ -671,35 +643,25 @@ For practical bank liquidity management, \textbf{Regularized Linear Regression} 
 \label{sec:conclusion}
 
 % --- Part 1: Problem + relevance, briefly restated ---
+Accurate forecasting of non-maturity deposit (NMD) volumes is fundamental for bank liquidity management, regulatory balance sheet planning, and interest rate risk assessment. However, modeling aggregate NMDs is challenged by non-stationarity, high autocorrelation, and macro-economic regime shifts.
 
 % --- Part 2: Contribution + key quantitative results ---
+This study evaluated six forecasting approaches across four distinct interest rate regimes ($2009$--$2025$) using an expanding-window rolling-origin setup. Our core conclusions address our three research questions:
+\begin{enumerate}
+    \item \textbf{Model Complexity vs. Accuracy (RQ1 \& RQ2):} Greater model complexity does not guarantee higher forecast accuracy. The Ridge-regularized Linear Model achieved the best overall performance ($\text{MAE} = 9.36$~Bn.~\texteuro, $R^2 = 0.178$), outperforming complex neural networks (FFN MAE $11.85$~Bn.~\texteuro) and boosted trees (XGBoost MAE $12.71$~Bn.~\texteuro).
+    \item \textbf{Covariate Selection (RQ3):} The predictive value of covariates depends heavily on model architecture. Linear models benefit from broad, multi-variable feature sets (\texttt{All covariates}) where regularized weights filter noise, whereas non-linear models performed best when restricted to core macroeconomic indicators (Inflation and Geopolitical Risk).
+    \item \textbf{Practical ALM Utility:} For bank liquidity buffer management (e.g., LCR requirements), simple regularized models offer minimal computational overhead, complete transparency, and robust protection against regime shifts.
+\end{enumerate}
 
 % --- Part 3: Outlook / future work ---
-
-% ---------------------------------------------------------------------------
-% Acknowledgements (journals only -- optional for this course deliverable)
-% ---------------------------------------------------------------------------
-% \section*{Acknowledgements}
+\paragraph{Outlook and Future Work.}
+Future research could extend this comparative framework by incorporating scenario-based path projections for dynamic covariates rather than holding them constant over the forecast horizon. Additionally, combining linear baseline trends with non-linear residual models (hybrid architectures) may better capture sudden systemic liquidity shocks while preserving long-term trend stability.
 
 % ---------------------------------------------------------------------------
 % Bibliography
 % ---------------------------------------------------------------------------
-% Prefer "good" references (course guidance, p.9): peer-reviewed
-% journals/conferences, English, from the same or a closely related
-% domain, ideally from ranked outlets (e.g. VHB JOURQUAL, FT50,
-% Handelsblatt ranking). Use books mainly for background, and web
-% sources mainly as data sources -- not as the primary evidence base.
-%
-% Option A: natbib + a .bib file (recommended; use a reference manager
-% such as Citavi, Zotero, or EndNote to build references.bib)
 \bibliographystyle{apalike}
 \bibliography{references}
-
-% Option B: manual thebibliography (quick start, replace with natbib
-% once you have enough sources -- course guideline: ~10-40 references
-% cited, scanning up to ~100)
-%\bibliographystyle{apalike}
-%\bibliography{references}
 
 % ---------------------------------------------------------------------------
 % Appendices
@@ -707,12 +669,9 @@ For practical bank liquidity management, \textbf{Regularized Linear Regression} 
 \appendix
 \section{Appendix: Additional Figures and Tables}
 \label{app:additional}
-% Any supplementary material that doesn't fit in the main text.
 
 \section{Appendix: Code}
 \label{app:code}
-% Code can be attached and counts towards the length requirement
-% (22,000-33,300 characters per the seminar description).
 \begin{lstlisting}[language=Python, caption={Example: model fitting excerpt}]
 def fit_sequence_model(model_name, X_train, y_train, seed=SEED):
     # ...

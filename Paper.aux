@@ -5,88 +5,103 @@
 \providecommand\HyField@AuxAddToFields[1]{}
 \providecommand\HyField@AuxAddToCoFields[2]{}
 \babel@aux{english}{}
-\citation{ecb2026glossary}
-\citation{bundesbank_data}
-\citation{ecb_estr}
-\citation{ecb_preestr}
+\citation{bcbs2016irrbb}
+\citation{schlueter2015bank}
+\citation{ecb2011monetary}
+\citation{winkler2025,marena2022nonmaturing}
+\@writefile{toc}{\contentsline {section}{\numberline {1}Introduction}{3}{section.1}\protected@file@percent }
+\newlabel{sec:introduction}{{1}{3}{Introduction}{section.1}{}}
 \citation{winkler2025}
+\citation{bundesbank_data}
+\citation{bundesbank2024financing}
+\citation{ecb_estr}
 \citation{gpr_index}
 \citation{destatis_inflation}
 \citation{yfinance}
 \citation{yahoo_finance_dax}
 \citation{bundesbank_bonds}
+\citation{bundesbank_data}
 \citation{winkler2025}
 \citation{fritsch_carlson}
-\citation{fritsch_carlson}
+\citation{ecb_preestr}
 \citation{winkler2025}
-\citation{box2015}
-\@writefile{toc}{\contentsline {section}{\numberline {1}Introduction}{3}{section.1}\protected@file@percent }
-\newlabel{sec:introduction}{{1}{3}{Introduction}{section.1}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {2}Related Work}{3}{section.2}\protected@file@percent }
-\newlabel{sec:related_work}{{2}{3}{Related Work}{section.2}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces Overview of related work and positioning of this paper.}}{3}{table.caption.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {2}Related Work}{4}{section.2}\protected@file@percent }
+\newlabel{sec:related_work}{{2}{4}{Related Work}{section.2}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces Positioning of this paper relative to related NMD research.}}{4}{table.caption.2}\protected@file@percent }
 \providecommand*\caption@xref[2]{\@setref\relax\@undefined{#1}}
-\newlabel{tab:related_work}{{1}{3}{Overview of related work and positioning of this paper}{table.caption.2}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {3}Methods}{3}{section.3}\protected@file@percent }
-\newlabel{sec:methods}{{3}{3}{Methods}{section.3}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Problem Setting and Data}{3}{subsection.3.1}\protected@file@percent }
+\newlabel{tab:related_work}{{1}{4}{Positioning of this paper relative to related NMD research}{table.caption.2}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {3}Data and Preprocessing}{4}{section.3}\protected@file@percent }
+\newlabel{sec:methods}{{3}{4}{Data and Preprocessing}{section.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Target Variable and Explanatory Variables}{4}{subsection.3.1}\protected@file@percent }
 \citation{box2015}
-\citation{hastie2009}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Data Alignment and Transformation: Interpolation Methods}{5}{subsection.3.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4}Forecasting Models}{5}{section.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Forecasting Framework}{5}{subsection.4.1}\protected@file@percent }
+\newlabel{eq:forecasting_problem}{{1}{5}{Forecasting Framework}{equation.4.1}{}}
+\newlabel{eq:level_reconstruction}{{4.1}{5}{Forecasting Framework}{equation.4.1}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Time series of all variables over the sample period January 2003 -- December 2025. All monthly series are shown after PCHIP interpolation to daily frequency. The $\text  {€STR}$ series begins in October 2019 following its introduction by the ECB.}}{6}{figure.caption.3}\protected@file@percent }
+\newlabel{fig:timeseries_overview}{{1}{6}{Time series of all variables over the sample period January 2003 -- December 2025. All monthly series are shown after PCHIP interpolation to daily frequency. The $\text {€STR}$ series begins in October 2019 following its introduction by the ECB}{figure.caption.3}{}}
 \citation{chen2016}
 \citation{hastie2009}
-\@writefile{toc}{\contentsline {paragraph}{Interpolation Methods}{4}{section*.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Models}{4}{subsection.3.2}\protected@file@percent }
-\newlabel{subsec:models}{{3.2}{4}{Models}{subsection.3.2}{}}
-\@writefile{toc}{\contentsline {paragraph}{Naive benchmarks.}{4}{section*.6}\protected@file@percent }
-\newlabel{eq:naive_rw}{{1}{4}{Naive benchmarks}{equation.3.1}{}}
-\@writefile{toc}{\contentsline {paragraph}{Linear Regression (Ridge).}{4}{section*.7}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{XGBoost.}{4}{section*.8}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Time series of all variables over the sample period January 2003 -- December 2025. All monthly series are shown after PCHIP interpolation to daily frequency. The $\text  {€STR}$ series begins in October 2019 following its introduction by the ECB.}}{5}{figure.caption.4}\protected@file@percent }
-\newlabel{fig:timeseries_overview}{{1}{5}{Time series of all variables over the sample period January 2003 -- December 2025. All monthly series are shown after PCHIP interpolation to daily frequency. The $\text {€STR}$ series begins in October 2019 following its introduction by the ECB}{figure.caption.4}{}}
-\citation{hastie2009}
-\citation{winkler2025}
 \citation{lim2021}
-\citation{lim2021}
-\citation{winkler2025}
-\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces First difference of $\mathrm  {Einlagevolumen}_t$ over the full sample period January 2003 -- December 2025. The series fluctuates around zero throughout, confirming stationarity after differencing. Increased volatility from 2022 onward coincides with the ECB interest rate tightening cycle.}}{6}{figure.caption.5}\protected@file@percent }
-\newlabel{fig:diff_volume}{{2}{6}{First difference of $\mathrm {Einlagevolumen}_t$ over the full sample period January 2003 -- December 2025. The series fluctuates around zero throughout, confirming stationarity after differencing. Increased volatility from 2022 onward coincides with the ECB interest rate tightening cycle}{figure.caption.5}{}}
-\@writefile{toc}{\contentsline {paragraph}{Feedforward Neural Network (FFN).}{6}{section*.9}\protected@file@percent }
-\newlabel{eq:ffn_neuron}{{2}{6}{Feedforward Neural Network (FFN)}{equation.3.2}{}}
-\@writefile{toc}{\contentsline {paragraph}{Temporal Fusion Transformer (TFT).}{6}{section*.10}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Ensembling.}{6}{section*.11}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces First difference of $\mathrm  {Einlagevolumen}_t$ over the full sample period January 2003 -- December 2025. The series fluctuates around zero throughout, confirming stationarity after differencing. Increased volatility from 2022 onward coincides with the ECB interest rate tightening cycle.}}{7}{figure.caption.4}\protected@file@percent }
+\newlabel{fig:diff_volume}{{2}{7}{First difference of $\mathrm {Einlagevolumen}_t$ over the full sample period January 2003 -- December 2025. The series fluctuates around zero throughout, confirming stationarity after differencing. Increased volatility from 2022 onward coincides with the ECB interest rate tightening cycle}{figure.caption.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Forecasting Models}{7}{subsection.4.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Naive benchmarks.}{7}{section*.5}\protected@file@percent }
+\newlabel{eq:naive_rw}{{4.2}{7}{Naive benchmarks}{section*.5}{}}
+\@writefile{toc}{\contentsline {paragraph}{Linear Regression (Ridge).}{7}{section*.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{XGBoost.}{7}{section*.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Feedforward Neural Network (FFN).}{7}{section*.8}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Temporal Fusion Transformer (TFT).}{7}{section*.9}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Covariate Specifications}{8}{subsection.4.3}\protected@file@percent }
+\newlabel{subsec:covariates}{{4.3}{8}{Covariate Specifications}{subsection.4.3}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Covariate specifications}}{8}{table.caption.10}\protected@file@percent }
+\newlabel{tab:covariate_sets}{{2}{8}{Covariate specifications}{table.caption.10}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.4}Rolling-Origin Evaluation}{8}{subsection.4.4}\protected@file@percent }
+\newlabel{subsec:rolling_evaluation}{{4.4}{8}{Rolling-Origin Evaluation}{subsection.4.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.5}Evaluation}{8}{subsection.4.5}\protected@file@percent }
+\newlabel{subsec:evaluation_metrics}{{4.5}{8}{Evaluation}{subsection.4.5}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {5}Results}{9}{section.5}\protected@file@percent }
+\newlabel{sec:results}{{5}{9}{Results}{section.5}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Forecasting Performance}{9}{subsection.5.1}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Forecasting performance across four rolling origins. MAE and RMSE are measured in EUR billions and reported as mean $\pm $ standard deviation.}}{9}{table.caption.11}\protected@file@percent }
+\newlabel{tab:overall_results}{{3}{9}{Forecasting performance across four rolling origins. MAE and RMSE are measured in EUR billions and reported as mean $\pm $ standard deviation}{table.caption.11}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Effect of Covariate Selection}{9}{subsection.5.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Variation Across Forecast Origins}{9}{subsection.5.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6}Discussion}{10}{section.6}\protected@file@percent }
+\newlabel{sec:discussion}{{6}{10}{Discussion}{section.6}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.1}Ridge Regression: The Gold Standard for Stability}{10}{subsection.6.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.2}Temporal Fusion Transformer (TFT): Architectural Overhead vs. Input Constraints}{10}{subsection.6.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.3}Feedforward Neural Networks (FFN) and XGBoost: Overfitting and Extrapolation Traps}{10}{subsection.6.3}\protected@file@percent }
 \bibstyle{apalike}
 \bibdata{references}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.4}Understanding the Out-of-Sample $R^2$ Metric in Time Series}{11}{subsection.6.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.5}Managerial Implications and Practical Takeaways}{11}{subsection.6.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7}Conclusion and Outlook}{11}{section.7}\protected@file@percent }
+\newlabel{sec:conclusion}{{7}{11}{Conclusion and Outlook}{section.7}{}}
+\@writefile{toc}{\contentsline {paragraph}{Outlook and Future Work.}{11}{section*.12}\protected@file@percent }
 \bibcite{yfinance}{{1}{2025}{{Aroussi}}{{}}}
-\bibcite{box2015}{{2}{2015}{{Box et~al.}}{{}}}
-\bibcite{gpr_index}{{3}{2022}{{Caldara and Iacoviello}}{{}}}
-\bibcite{chen2016}{{4}{2016}{{Chen and Guestrin}}{{}}}
-\bibcite{destatis_inflation}{{5}{2025}{{Destatis}}{{}}}
-\bibcite{bundesbank_data}{{6}{2025a}{{Deutsche Bundesbank}}{{}}}
-\bibcite{bundesbank_bonds}{{7}{2025b}{{Deutsche Bundesbank}}{{}}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Evaluation Strategy}{7}{subsection.3.3}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Overview of the analytics pipeline: data preprocessing, model training, and evaluation stages.}}{7}{figure.caption.12}\protected@file@percent }
-\newlabel{fig:pipeline}{{3}{7}{Overview of the analytics pipeline: data preprocessing, model training, and evaluation stages}{figure.caption.12}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {4}Results}{7}{section.4}\protected@file@percent }
-\newlabel{sec:results}{{4}{7}{Results}{section.4}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Out-of-sample performance comparison across models. Metrics computed on the reconstructed volume level and the differenced series (mean $\pm $ std over rolling origins).}}{7}{table.caption.13}\protected@file@percent }
-\newlabel{tab:results_comparison}{{2}{7}{Out-of-sample performance comparison across models. Metrics computed on the reconstructed volume level and the differenced series (mean $\pm $ std over rolling origins)}{table.caption.13}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces Example caption style: ``Comparison of forecasting accuracy in terms of RMSE, measured from [start date] to [end date] across [list of models].''}}{7}{figure.caption.14}\protected@file@percent }
-\newlabel{fig:forecast_comparison}{{4}{7}{Example caption style: ``Comparison of forecasting accuracy in terms of RMSE, measured from [start date] to [end date] across [list of models].''}{figure.caption.14}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {5}Discussion}{7}{section.5}\protected@file@percent }
-\newlabel{sec:discussion}{{5}{7}{Discussion}{section.5}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {6}Conclusion and Outlook}{7}{section.6}\protected@file@percent }
-\newlabel{sec:conclusion}{{6}{7}{Conclusion and Outlook}{section.6}{}}
-\bibcite{ecb_preestr}{{8}{2025a}{{European Central Bank}}{{}}}
-\bibcite{ecb_estr}{{9}{2025b}{{European Central Bank}}{{}}}
-\bibcite{ecb2026glossary}{{10}{2026}{{European Central Bank}}{{}}}
-\bibcite{fritsch_carlson}{{11}{1980}{{Fritsch and Carlson}}{{}}}
-\bibcite{hastie2009}{{12}{2009}{{Hastie et~al.}}{{}}}
-\bibcite{lim2021}{{13}{2021}{{Lim et~al.}}{{}}}
-\bibcite{winkler2025}{{14}{2025}{{Winkler}}{{}}}
-\bibcite{yahoo_finance_dax}{{15}{2026}{{Yahoo Finance}}{{}}}
-\@writefile{toc}{\contentsline {section}{\numberline {A}Appendix: Additional Figures and Tables}{8}{appendix.A}\protected@file@percent }
-\newlabel{app:additional}{{A}{8}{Appendix: Additional Figures and Tables}{appendix.A}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {B}Appendix: Code}{8}{appendix.B}\protected@file@percent }
-\newlabel{app:code}{{B}{8}{Appendix: Code}{appendix.B}{}}
-\@writefile{lol}{\contentsline {lstlisting}{\numberline {1}{\ignorespaces Example: model fitting excerpt}}{8}{lstlisting.1}\protected@file@percent }
-\gdef \@abspage@last{8}
+\bibcite{bcbs2016irrbb}{{2}{2016}{{BCBS}}{{}}}
+\bibcite{box2015}{{3}{2015}{{Box et~al.}}{{}}}
+\bibcite{gpr_index}{{4}{2022}{{Caldara and Iacoviello}}{{}}}
+\bibcite{chen2016}{{5}{2016}{{Chen and Guestrin}}{{}}}
+\bibcite{destatis_inflation}{{6}{2025}{{Destatis}}{{}}}
+\bibcite{bundesbank2024financing}{{7}{2024}{{Deutsche Bundesbank}}{{}}}
+\bibcite{bundesbank_data}{{8}{2025a}{{Deutsche Bundesbank}}{{}}}
+\bibcite{bundesbank_bonds}{{9}{2025b}{{Deutsche Bundesbank}}{{}}}
+\bibcite{ecb2011monetary}{{10}{2011}{{European Central Bank}}{{}}}
+\bibcite{ecb_preestr}{{11}{2025a}{{European Central Bank}}{{}}}
+\bibcite{ecb_estr}{{12}{2025b}{{European Central Bank}}{{}}}
+\bibcite{fritsch_carlson}{{13}{1980}{{Fritsch and Carlson}}{{}}}
+\bibcite{hastie2009}{{14}{2009}{{Hastie et~al.}}{{}}}
+\bibcite{lim2021}{{15}{2021}{{Lim et~al.}}{{}}}
+\bibcite{marena2022nonmaturing}{{16}{2022}{{Marena et~al.}}{{}}}
+\bibcite{schlueter2015bank}{{17}{2015}{{Schlueter et~al.}}{{}}}
+\bibcite{winkler2025}{{18}{2025}{{Winkler}}{{}}}
+\bibcite{yahoo_finance_dax}{{19}{2026}{{Yahoo Finance}}{{}}}
+\@writefile{toc}{\contentsline {section}{\numberline {A}Appendix: Additional Figures and Tables}{13}{appendix.A}\protected@file@percent }
+\newlabel{app:additional}{{A}{13}{Appendix: Additional Figures and Tables}{appendix.A}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {B}Appendix: Code}{13}{appendix.B}\protected@file@percent }
+\newlabel{app:code}{{B}{13}{Appendix: Code}{appendix.B}{}}
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {1}{\ignorespaces Example: model fitting excerpt}}{13}{lstlisting.1}\protected@file@percent }
+\gdef \@abspage@last{13}

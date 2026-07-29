@@ -6,6 +6,11 @@ Aroussi, R. (2025).
 \newblock \url{https://ranaroussi.github.io/yfinance/}.
 \newblock Accessed: 9 July 2026.
 
+\bibitem[{BCBS}, 2016]{bcbs2016irrbb}
+{BCBS} (2016).
+\newblock Interest rate risk in the banking book.
+\newblock Standards, Bank for International Settlements.
+
 \bibitem[Box et~al., 2015]{box2015}
 Box, G. E.~P., Jenkins, G.~M., Reinsel, G.~C., and Ljung, G.~M. (2015).
 \newblock {\em {Time Series Analysis: Forecasting and Control}}.
@@ -27,6 +32,13 @@ Chen, T. and Guestrin, C. (2016).
 \newblock Consumer price index (cpi) and inflation rates in germany.
 \newblock Accessed: [9.7.2026].
 
+\bibitem[{Deutsche Bundesbank}, 2024]{bundesbank2024financing}
+{Deutsche Bundesbank} (2024).
+\newblock Financing costs for banks in germany in the monetary policy interest
+  rate cycle.
+\newblock Monthly report article, Deutsche Bundesbank, Frankfurt am Main,
+  Germany.
+
 \bibitem[{Deutsche Bundesbank}, 2025a]{bundesbank_data}
 {Deutsche Bundesbank} (2025a).
 \newblock Time series database.
@@ -37,6 +49,11 @@ Chen, T. and Guestrin, C. (2016).
 \newblock Yields of debt securities outstanding: 10-year maturity.
 \newblock Accessed: [9.7.2026].
 
+\bibitem[{European Central Bank}, 2011]{ecb2011monetary}
+{European Central Bank} (2011).
+\newblock {\em The Monetary Policy of the ECB}.
+\newblock European Central Bank, 3rd edition.
+
 \bibitem[{European Central Bank}, 2025a]{ecb_preestr}
 {European Central Bank} (2025a).
 \newblock {Euro Short-Term Rate ({Pre-\texteuro}STR)}.
@@ -46,13 +63,6 @@ Chen, T. and Guestrin, C. (2016).
 {European Central Bank} (2025b).
 \newblock {Euro Short-Term Rate ({\texteuro}STR)}.
 \newblock Accessed: [11.7.2026].
-
-\bibitem[{European Central Bank}, 2026]{ecb2026glossary}
-{European Central Bank} (2026).
-\newblock Overnight deposits.
-\newblock Monetary Policy Glossary,
-  \url{https://www.ecb.europa.eu/services/glossary/html/act6o.en.html}.
-\newblock Accessed: [9.7.2026].
 
 \bibitem[Fritsch and Carlson, 1980]{fritsch_carlson}
 Fritsch, F.~N. and Carlson, R.~E. (1980).
@@ -70,6 +80,17 @@ Lim, B., Ar{\i}k, S.~O., Loeff, N., and Pfister, T. (2021).
 \newblock {Temporal Fusion Transformers for Interpretable Multi-horizon Time
   Series Forecasting}.
 \newblock {\em International Journal of Forecasting}, 37(4):1748--1764.
+
+\bibitem[Marena et~al., 2022]{marena2022nonmaturing}
+Marena, M., Romeo, A., and Semeraro, P. (2022).
+\newblock Non-maturing deposits modelling in a ornstein-uhlenbeck framework.
+\newblock Preprint arXiv:2209.13314v1, arXiv.
+
+\bibitem[Schlueter et~al., 2015]{schlueter2015bank}
+Schlueter, T., Sievers, S., and Hartmann-Wendels, T. (2015).
+\newblock Bank funding stability, pricing strategies and the guidance of
+  depositors.
+\newblock {\em Journal of Banking \& Finance}, 51:43--61.
 
 \bibitem[Winkler, 2025]{winkler2025}
 Winkler, E. (2025).

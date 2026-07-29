@@ -57,7 +57,10 @@
 % Title, authors, affiliation
 % ---------------------------------------------------------------------------
 \title{\textbf{Paper Title: Forecasting X with Y --- A Comparative Evaluation}}
-\author[1]{David et al.}
+\author[1]{David Escamilla \small Matr.-Nr.: XXXXXXX}
+\author[1]{Levin Gamon \small Matr.-Nr.: XXXXXXX}
+\author[1]{Gregor Hoffmann \small Matr.-Nr.: XXXXXXX}
+\author[1]{Maté Szabo \small Matr.-Nr.: XXXXXXX}
 \affil[1]{LMU Munich School of Management, Institute of AI in Management}
 \date{\today}
 
@@ -77,15 +80,29 @@
 %   problem briefly, (3) name the methodology, (4) summarize the outcome
 %   with quantitative results.
 \begin{abstract}
-% (1) Relevance -- 1-2 sentences.
-% (2) Problem statement -- 1 sentence.
-% (3) Methodology -- 1-2 sentences.
-% (4) Quantitative outcome / takeaway -- 1-2 sentences.
-
-\noindent Liquidity management ensures that a bank has sufficient cash to fulfill its short-term obligations, while minimizing the cost of holding an excess of it. One of the most important sources of liquidity for a bank are non-maturity deposits. Therefore, forecasting the volume of these deposits is crucial for the liquidity management process of a bank. However, despite the economic importance of deposit volume prediction, the scientific research is limited, meaning there is not an established scientific framework to correctly model them. Here, we build different machine learning models for deposit volume prediction and evaluate whether model-robustness provides more accurate results. + (Maybe compare with Elias models) ++ Main results?. We expect that this study contributes to the development of more specialized approaches for modeling non-maturity deposits, while also support future research on other practical banking applications besides liquidity management, including strategic planning, interest rate risk management, and profitability analysis. 
-\break
-\textit{    Placeholder abstract text (target: $\leq 150$ words, no citations).}
-\end{abstract}
+    \noindent Liquidity management ensures that a bank has sufficient
+    cash to fulfill its short-term obligations while minimizing the
+    cost of holding excess liquidity, and non-maturity deposits (NMDs)
+    are among the most important sources of this liquidity. Despite
+    their economic importance, forecasting NMD volumes remains
+    methodologically underdeveloped, with no established consensus on
+    the optimal modeling approach. This study compares naive
+    benchmarks, a regularized linear model, gradient-boosted trees, a
+    feedforward neural network, and a Temporal Fusion Transformer for
+    forecasting German household overnight deposit volumes over a
+    100-day horizon, using a rolling-origin evaluation across four
+    distinct interest-rate regimes between 2009 and 2025. The
+    regularized linear model achieved the lowest mean forecast error
+    (MAE $= 9.36$~Bn.~\texteuro) and was the only model with a
+    positive mean $R^2$ ($0.178$), outperforming the na\"ive
+    random-walk benchmark (MAE $= 11.78$~Bn.~\texteuro) by
+    $20.5\%$, while more complex non-linear architectures did not
+    consistently improve on this simple benchmark. These results
+    indicate that increased model complexity does not necessarily
+    translate into higher forecasting accuracy for this task, with
+    direct implications for how banks might select forecasting tools
+    for liquidity management.
+    \end{abstract}
 
 \newpage
 \tableofcontents
@@ -138,7 +155,16 @@ across different economic periods. All models are assessed using a common
 rolling-origin design and a realistic information set in which realized economic
 covariates beyond the forecast origin are unavailable.
 \\
-\indent The remainder of this paper is structured as follows. Section 2 provides related literature on NMD modeling and forecasting, and positions this study within this research. Section 3 presents the data and forecasting methodology, including data preparation, model explanation, covariates, and rolling-origin scheme. Section 4 reports and compares the results. Finally Section 6 concludes the paper.
+\indent The remainder of this paper is structured as follows. Section~2
+provides related literature on NMD modeling and forecasting, and
+positions this study within this research. Section~3 presents the
+data and preprocessing methodology, including variable definitions,
+interpolation, and target transformation. Section~4 describes the
+forecasting framework, the models under comparison, and the
+rolling-origin evaluation design. Section~5 reports and compares
+the forecasting results. Section~6 discusses these findings and
+their managerial implications. Finally, Section~7 concludes the
+paper and outlines directions for future research.
 
 \begin{researchquestion}
 \textbf{Research Question(s):}
@@ -179,18 +205,17 @@ covariates beyond the forecast origin are unavailable.
 % Optional: tabular overview of related work, modeled on LMU v2 p.21.
 \begin{table}[htbp]
     \centering
-    \caption{Overview of related work and positioning of this paper.}
+    \caption{Positioning of this paper relative to related NMD research.}
     \label{tab:related_work}
-    \begin{tabular}{lccccc}
+    \begin{tabularx}{\textwidth}{l X X}
         \toprule
-        Reference & Data/Market & Method & Rolling & Out-of-sample & \dots \\
+        Reference & Modeling Approach & Rolling-Origin Evaluation \\
         \midrule
-        Author et al. (Year) & \dots & \dots & \ding{55} & \ding{51} & \dots \\
-        Author et al. (Year) & \dots & \dots & \ding{51} & \ding{55} & \dots \\
+        \citet{winkler2025} & L\'evy-driven OU process vs.\ LSTM & \ding{55} \\
         \midrule
-        \textbf{This paper} & \dots & \dots & \ding{51} & \ding{51} & \dots \\
+        \textbf{This paper} & Naive, Ridge, XGBoost, FFN, TFT comparison & \ding{51} \\
         \bottomrule
-    \end{tabular}
+    \end{tabularx}
 \end{table}
 
 % ---------------------------------------------------------------------------
@@ -227,8 +252,11 @@ preceding month. Inflation changes how much households spend and save, therefore
 sourced at business-day frequency from the Deutsche Bundesbank
 \citep{bundesbank_bonds}. As the 10-year old government bond is a relatively safe investment product, private household may be drawn to invest more on them if the rate is sufficiently attractive, investing less in overnight deposits account. 
 
-\textbf{Deposit Rate:} it refers to the house deposit rate. The more interest households receive on deposits, the more attractive it may be to keep their money there. 
-
+\textbf{Deposit Rate:} refers to the household deposit interest
+rate, sourced from the Deutsche Bundesbank \citep{bundesbank_data}.
+The more interest households receive on deposits, the more
+attractive it may be to keep their money in overnight deposit
+accounts rather than seeking alternative investments.
 
 
 
@@ -248,11 +276,6 @@ back to January 2003. For the period March 2017 to September
 direct predecessor series. For earlier observations, the series
 is reconstructed following \citet[Ch.~5.2]{winkler2025}.
 
-The $\text{€STR}$ was
-officially introduced in October 2019. For the period March 2017 to September
-2019, the Pre-$\text{€STR}$ \citep{ecb_preestr} is used as a
-direct predecessor series. For earlier observations, the series
-is reconstructed following \citet[Ch.~5.2]{winkler2025}. 
 For variables available at business-day frequency,
 ($\text{€STR}$, DAX and $\mathrm{10Y~Bond}$), weekend and public
 holiday gaps are handled via forward-fill, carrying the last
@@ -288,8 +311,6 @@ as illustrated in Figure~\ref{fig:diff_volume}. Second differencing was rejected
 After interpolation to daily frequency, the dataset comprises
 $8,276$ observations covering the full sample period January
 2003 to September 2025. 
-
-\textit{should we keep it as variables ($STR$ or change to their actual names)}
 
 \section{Forecasting Models}
 \subsection{Forecasting Framework}
@@ -424,6 +445,14 @@ evaluation window:
 The models are re-estimated at every origin as newly observed data becomes
 available. The evaluation uses four origins: 1 January 2009, 1 January 2013,
 1 March 2019, and 1 June 2025.
+The models are re-estimated at every origin as newly observed data becomes
+available. The evaluation uses four origins: 1 January 2009, 1 January 2013,
+1 March 2019, and 1 June 2025. These dates were selected to represent
+distinct interest-rate and macroeconomic regimes -- the 2008/2009 financial
+crisis, the subsequent low-interest-rate period, the pre-COVID environment,
+and the post-2022 high-interest-rate tightening cycle -- rather than a dense
+monthly rolling scheme, in order to explicitly test model robustness across
+qualitatively different economic conditions.
 
 \subsection{Evaluation}
 \label{subsec:evaluation_metrics}
@@ -465,7 +494,12 @@ their mean and standard deviation across origins. The primary comparison uses
 MAE for the reconstructed deposit-volume levels, measured in billions of
 euros. RMSE and \(R^2\) provide complementary information, while metrics on
 first differences are used as diagnostic measures.
-
+A Diebold--Mariano test
+for pairwise significance of forecast accuracy differences was implemented
+but not applied to the main results, as the four rolling origins used here
+provide insufficient statistical power for a reliable significance test;
+model comparisons are therefore reported descriptively rather than as
+formal hypothesis tests.
 
 
 
@@ -578,7 +612,6 @@ be interpreted as a comparison across selected historical periods rather than
 as evidence of statistical superiority. Nevertheless, the benchmark shows
 that simple and interpretable methods remain competitive for forecasting
 aggregate household overnight deposits.
-\begin{comment}
 % ---------------------------------------------------------------------------
 % 5. Discussion
 % ---------------------------------------------------------------------------
@@ -594,12 +627,12 @@ aggregate household overnight deposits.
 % - Managerial implications for decision-makers.
 % - Broader / future impact.
 
-The empirical findings from our rolling-origin benchmark provide crucial insights into how distinct algorithmic architectures handle highly autocorrelated, noisy, and regime-shifting financial time series over a $100$-day forecasting horizon. Contrary to common expectations in modern machine learning literature, our evaluation across four distinct macroeconomic interest rate regimes ($2009$--$2025$) reveals that **simpler, regularized linear models outperform complex non-linear architectures**.
+The empirical findings from our rolling-origin benchmark provide crucial insights into how distinct algorithmic architectures handle highly autocorrelated, noisy, and regime-shifting financial time series over a $100$-day forecasting horizon. Contrary to common expectations in modern machine learning literature, our evaluation across four distinct macroeconomic interest rate regimes ($2009$--$2025$) reveals that \textbf{simpler, regularized linear models outperform complex non-linear architectures}.
 
 This section critically evaluates the performance, structural strengths, and architectural constraints of all six benchmarked models based on the empirical results presented in Table~\ref{tab:overall_results}.
 
-\subsection{Regularized Linear Regression: The Gold Standard for Stability}
-The Ridge-regularized Linear Model achieved the highest overall accuracy ($\text{MAE} = 9.36$~Bn.~\texteuro), outperforming the Last-change benchmark by $20.5\%$ and remaining the **only model to achieve a positive mean $R^2$ ($0.178$)**. 
+\subsection{Ridge Regression: The Gold Standard for Stability}
+Ridge achieved the highest overall accuracy ($\text{MAE} = 9.36$~Bn.~\texteuro), outperforming Random Walk by $20.5\%$ and remaining the **only model to achieve a positive mean $R^2$ ($0.178$)**. 
 
 The structural advantage of $L_2$-regularized linear models in cumulative horizon forecasting lies in their smooth penalty mechanism. When predicting daily volume differences ($\Delta y_t$) over $H = 100$ steps, small daily estimation errors compound linearly or quadratically during final volume reconstruction:
 \begin{equation}
@@ -610,10 +643,10 @@ The Ridge penalty shrinks non-essential feature weights toward zero, effectively
 \subsection{Temporal Fusion Transformer (TFT): Architectural Overhead vs. Input Constraints}
 The Temporal Fusion Transformer ranked second overall ($\text{MAE} = 10.78$~Bn.~\texteuro). Although TFT is designed specifically for multi-horizon time series forecasting via self-attention mechanisms, its full performance potential was constrained by the strict ex-post evaluation setup.
 
-To prevent look-ahead bias, future values of dynamic covariates were held constant using a naive-hold assumption over the $100$-day horizon. As a result, TFT’s temporal self-attention layers received static input sequences for dynamic economic drivers, neutralizing its primary structural advantage for capturing future macro trajectories. While TFT successfully outperformed tree ensembles and the naive benchmark, its parameter overhead provided no benefit over Ridge regression under static future covariate assumptions.
+To prevent look-ahead bias, future values of dynamic covariates were held constant using a naive-hold assumption over the $100$-day horizon. As a result, TFT’s temporal self-attention layers received static input sequences for dynamic economic drivers, neutralizing its primary structural advantage for capturing future macro trajectories. While TFT successfully outperformed tree ensembles and the naive benchmark, its parameter overhead provided no benefit over Ridge under static future covariate assumptions.
 
 \subsection{Feedforward Neural Networks (FFN) and XGBoost: Overfitting and Extrapolation Traps}
-Neither the Feedforward Neural Network ($\text{MAE} = 11.85$~Bn.~\texteuro) nor XGBoost ($\text{MAE} = 12.71$~Bn.~\texteuro) managed to consistently outperform the simple Last-change benchmark ($\text{MAE} = 11.78$~Bn.~\texteuro) on average:
+Neither FFN ($\text{MAE} = 11.85$~Bn.~\texteuro) nor XGBoost ($\text{MAE} = 12.71$~Bn.~\texteuro) managed to consistently outperform the simple Random Walk benchmark ($\text{MAE} = 11.78$~Bn.~\texteuro) on average:
 \begin{itemize}
     \item \textbf{FFN Consistency vs. Precision:} Interestingly, the FFN exhibited the lowest standard deviation across forecast origins ($\pm 6.90$~Bn.~\texteuro), indicating high cross-regime consistency. However, its average MAE remained slightly worse than the simple benchmark, showing that unregularized dense layers tend to fit noise in daily volume differences.
     \item \textbf{XGBoost Extrapolation Limitation:} Decision trees partition the feature space into orthogonal hyper-rectangles and cannot extrapolate continuous trends beyond the bounded range of historical training data. When deposit volumes reached new record levels (such as during the 2022--2025 rate tightening cycle), XGBoost capped predictions at historical leaf thresholds, causing systematic underestimation.
@@ -630,12 +663,12 @@ As observed in Table~\ref{tab:overall_results}, several models yielded negative 
 %\end{figure}
 
 \subsection{Managerial Implications and Practical Takeaways}
-For bank Asset-Liability Management (ALM) and treasury operations, predictability, computational speed, and interpretability are critical. Our benchmark demonstrates that complex deep learning models do not automatically translate into superior deposit forecasts when future macro-covariates are uncertain. **Regularized Linear Regression provides the most robust, interpretable, and accurate framework for 100-day NMD volume forecasting.**
+For bank Asset-Liability Management (ALM) and treasury operations, predictability, computational speed, and interpretability are critical. Our benchmark demonstrates that complex deep learning models do not automatically translate into superior deposit forecasts when future macro-covariates are uncertain. \textbf{Ridge provides the most robust, interpretable, and accurate framework for 100-day NMD volume forecasting.}
 
 % ---------------------------------------------------------------------------
 % 6. Conclusion and Outlook
 % ---------------------------------------------------------------------------
-% Guidance (p.26), three-part structure:
+% Guidance (p.26), three-part structure:f
 %   1. Repeat problem and its relevance
 %   2. Repeat contribution, incl. quantitative results
 %   3. [Optional] Outlook on further research steps
@@ -648,7 +681,7 @@ Accurate forecasting of non-maturity deposit (NMD) volumes is fundamental for ba
 % --- Part 2: Contribution + key quantitative results ---
 This study evaluated six forecasting approaches across four distinct interest rate regimes ($2009$--$2025$) using an expanding-window rolling-origin setup. Our core conclusions address our three research questions:
 \begin{enumerate}
-    \item \textbf{Model Complexity vs. Accuracy (RQ1 \& RQ2):} Greater model complexity does not guarantee higher forecast accuracy. The Ridge-regularized Linear Model achieved the best overall performance ($\text{MAE} = 9.36$~Bn.~\texteuro, $R^2 = 0.178$), outperforming complex neural networks (FFN MAE $11.85$~Bn.~\texteuro) and boosted trees (XGBoost MAE $12.71$~Bn.~\texteuro).
+    \item \textbf{Model Complexity vs. Accuracy (RQ1 \& RQ2):} Greater model complexity does not guarantee higher forecast accuracy. Ridge achieved the best overall performance ($\text{MAE} = 9.36$~Bn.~\texteuro, $R^2 = 0.178$), outperforming FFN (MAE $11.85$~Bn.~\texteuro) and XGBoost (MAE $12.71$~Bn.~\texteuro).
     \item \textbf{Covariate Selection (RQ3):} The predictive value of covariates depends heavily on model architecture. Linear models benefit from broad, multi-variable feature sets (\texttt{All covariates}) where regularized weights filter noise, whereas non-linear models performed best when restricted to core macroeconomic indicators (Inflation and Geopolitical Risk).
     \item \textbf{Practical ALM Utility:} For bank liquidity buffer management (e.g., LCR requirements), simple regularized models offer minimal computational overhead, complete transparency, and robust protection against regime shifts.
 \end{enumerate}

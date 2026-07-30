@@ -101,7 +101,7 @@
 A Rolling-Origin Benchmark for Forecasting\\
 German Household Overnight Deposit Volumes}}
 \author[1]{David Escamilla \small Matr.-Nr.: XXXXXXX}
-\author[1]{Levin Gamon \small Matr.-Nr.: XXXXXXX}
+\author[1]{Levin Gamon \small Matr.-Nr.: 13147864}
 \author[1]{Gregor Hoffmann \small Matr.-Nr.: XXXXXXX}
 \author[1]{Mat\'e Szabo \small Matr.-Nr.: XXXXXXX}
 \affil[1]{LMU Munich School of Management, Institute of AI in Management}
@@ -164,7 +164,7 @@ at any time. Therefore, because of their stability and low cost, NMDs are an
 important source of funding for banks. Especially for German banks, NMDs
 nowadays represent the most important funding source after exhibiting dynamic
 growth in the aftermath of the financial crisis of 2008
-\citep{schlueter2015bank}. Considering this, it becomes clear how important
+\citep{schlueter2015bank}. Considering this, it becomes clear how valuable
 the study of NMDs is for bank liquidity management, the process of assessing
 the liquidity needs of a bank and supplying or absorbing the appropriate
 amount of liquidity through open market operations \citep{ecb2011monetary}.
@@ -198,17 +198,19 @@ model performance remains stable across different economic periods, using both
 absolute and scale-free error measures, since the deposit stock itself grows
 strongly over the sample.
 
-\indent The remainder of this paper is structured as follows. Section~2
-reviews the literature on NMD modeling and on the more general question of
-whether complex forecasting models outperform simple ones, and positions this
-study within that research. Section~3 presents the data and preprocessing
-methodology, including variable definitions, interpolation, and target
-transformation. Section~4 describes the forecasting framework, the models
-under comparison, the tuning protocol, and the rolling-origin evaluation
-design. Section~5 reports and compares the forecasting results. Section~6
-discusses these findings, their limitations, and their managerial
-implications. Finally, Section~7 concludes and outlines directions for future
-research.
+\indent The remainder of this paper is structured as follows. To position our benchmark within 
+existing NMD literature and broader debates on forecasting complexity, Section~\ref{sec:related_work} 
+reviews relevant research and establishes our theoretical framework. To address non-stationarity, 
+daily frequency alignment, and delayed interest-rate pass-through, Section~\ref{sec:data} details our 
+data preprocessing, PCHIP interpolation, and lag-augmentation methodology. Building on these 
+preprocessed inputs, Section~\ref{sec:models} formalizes the multi-horizon forecasting framework, 
+model specifications, and our controlled rolling-origin evaluation setup. These models are evaluated in 
+Section~\ref{sec:results}, which reports empirical accuracy across four distinct macroeconomic regimes and 
+reveals that increased complexity fails to improve forecast accuracy. To explain these findings, 
+Section~\ref{sec:discussion} critically analyzes the underlying architectural failure modes, 
+acknowledges explicit limitations, and outlines practical implications for bank treasury operations. 
+Finally, Section~\ref{sec:conclusion} concludes with key takeaways and details five concrete avenues for 
+future research.
 
 \begin{researchquestion}
 \textbf{Research Question(s):}
@@ -258,7 +260,7 @@ predictability is rarely evaluated in its own right.
 The most direct predecessor of this study is \citet{winkler2025}, who compares
 a L\'evy-driven Ornstein--Uhlenbeck process with an LSTM network on German
 deposit data and provides the interpolation and \estr{} reconstruction
-procedures that we adopt in Section~\ref{sec:methods}.
+procedures that we adopt in Section~\ref{subsec:interpolation}.
 \citet{marena2022nonmaturing} likewise apply machine-learning methods to NMD
 modelling. Both studies evaluate on a single, fixed out-of-sample window. This
 matters, because a single window cannot separate a genuinely superior model
@@ -317,7 +319,7 @@ tuning budget, and an explicit scale-free error measure.
 % 3. Data and Preprocessing
 % ---------------------------------------------------------------------------
 \section{Data and Preprocessing}
-\label{sec:methods}
+\label{sec:data}
 
 \subsection{Target Variable and Explanatory Variables}
 
@@ -494,6 +496,7 @@ Section~\ref{subsec:limitations}.
 % 4. Forecasting Models
 % ---------------------------------------------------------------------------
 \section{Forecasting Models}
+\label{sec:models}
 \subsection{Forecasting Framework}
 \label{sec:framework}
 

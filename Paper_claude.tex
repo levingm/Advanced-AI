@@ -9,7 +9,7 @@
 \usepackage[english]{babel}
 \usepackage{amsmath,amssymb}
 \usepackage{textcomp}
-\usepackage{graphicx}
+\usepackage[draft]{graphicx}
 \usepackage{booktabs}
 \usepackage{tabularx}
 \usepackage{caption}
@@ -102,7 +102,7 @@ stochastic cash-flow needs, forecasting volume trajectories remains
 methodologically challenging, and literature lacks consensus on the optimal
 modeling approach \citep{winkler2025, marena2022nonmaturing}.
 
-\indent This study addresses this gap by comparing the forecasting NMD volumes. Because bank-level NMD data are
+\indent This study addresses this gap by comparing the forecasting of NMD volumes. Because bank-level NMD data are
 protected, our empirical analysis uses publicly observable German household
 overnight deposit data as an aggregate as seen in Section~\ref{subsec:limitations}.
 
@@ -191,7 +191,7 @@ tuning budgets, and scale-free metrics.
         \citet{jarrow1998}        & Arbitrage-free valuation & \ding{55} & --- \\
         \citet{obrien2000}        & Partial-adjustment model & \ding{55} & --- \\
         \citet{frauendorfer2003}  & Replicating portfolios & \ding{55} & --- \\
-        \citet{marena2022nonmaturing} & Machine learning for NMDs & \ding{55} & \ding{55} \\
+        \citet{marena2022nonmaturing} & Lévy OU framework & \ding{55} & \ding{55} \\
         \citet{winkler2025}       & L\'evy OU process vs.\ LSTM & \ding{55} & \ding{55} \\
         \citet{makridakis2020m4}  & Large-scale M4 competition & \ding{51} & \ding{51} \\
         \citet{zeng2023transformers} & Linear layer vs.\ Transformers & \ding{51} & \ding{51} \\
@@ -322,6 +322,7 @@ and roughly one-month delay. For a covariate set $\mathcal{C}$, the feature
 vector at time $t$ is
 \begin{equation}
     \mathbf{x}_t = \left( \{c_t\}_{c \in \mathcal{C}},\, \{c_{t-1}\}_{c \in \mathcal{C}},\, \{c_{t-5}\}_{c \in \mathcal{C}},\, \{c_{t-20}\}_{c \in \mathcal{C}} \right)
+    \label{eq:laggedcoveq}
 \end{equation}
 The contemporaneous value is retained alongside the lags so that immediate and
 delayed effects can both be represented and the model, rather than the
@@ -369,23 +370,18 @@ independent monthly releases. The effective sample size is therefore roughly
 thirty times smaller than the nominal number of rows, a point we return to in
 Section~\ref{subsec:limitations}.
 
-% ---------------------------------------------------------------------------
-% 4. Forecasting Models
-% ---------------------------------------------------------------------------
+%xDXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 \section{Forecasting Models}
 \label{sec:models}
 \subsection{Forecasting Framework}
 \label{sec:framework}
 
-Let \(y_t\) denote the volume of German household overnight deposits at time
-\(t\), and let \(\mathbf{x}_t\) denote the lag-augmented covariate vector of
-Equation~\eqref{eq:lags}. The objective is to forecast deposit volumes over a
-100-day horizon using the information available during the preceding 100
-days. The horizon $H=100$ corresponds to roughly one quarter of trading days
-and thus to the planning cycle used in operational liquidity management.
+We define \(y_t\) as the volume of German household overnight deposits at time
+\(t\), and \(\mathbf{x}_t\) as the vector of our predictors and their lagged values from Equation~\eqref{eq:forecasting_problem}. The objective is to forecast deposit volumes over a
+100-day horizon ($H=100$) using the information available during the preceding 100
+days ($L=100$). The reasoning for $H=100$ is because it accounts for roughly one quarter of trading days, therefore relevant for the operational liquidity management's planning cycle. 
 
-At the time of forecast \(t\), the models use a lookback window of \(L=100\).
-The information set therefore contains the historical deposit volume and the
+At time of forecast \(t\) the information set contains the historical deposit volume and the
 selected covariates over the period \(t-L+1,\ldots,t\). Each model produces
 the complete vector of predicted changes for the following \(H=100\) days:
 \begin{equation}
@@ -401,26 +397,11 @@ the complete vector of predicted changes for the following \(H=100\) days:
 
 Setting $L = H$ follows the common convention that the context available to a
 multi-horizon forecaster should be at least as long as the horizon it must
-predict \citep{lim2021, zeng2023transformers}. In our setting the choice is
-also dictated by the effective resolution of the target: because the deposit
+predict \citep{lim2021, zeng2023transformers}. Also, since the deposit
 series is published monthly and interpolated to a daily grid
 (Section~\ref{subsec:interpolation}), a window of 100 trading days spans
-approximately five genuine observations of the target, whereas a shorter
-window would span only one or two and would leave the models with essentially
-no information about the shape of the recent trajectory.
-
-The choice is not costless, and we state the cost explicitly because it
-interacts with our central claim. Each training example consumes $L + H = 200$
-consecutive observations, so the number of usable training sequences at origin
-$o_k$ is $o_k - L - H + 2$. At the January 2009 origin, which offers roughly
-$1{,}550$ trading days of history, this leaves approximately $1{,}350$
-overlapping sequences that are themselves derived from only about sixty
-independent monthly releases. Parameter-rich models are therefore fitted on a
-small effective sample precisely at the origin that the results identify as
-the hardest (Section~\ref{sec:results}), which offers an additional
-explanation for the poor performance of the flexible architectures there
-beyond the economic argument of Section~\ref{subsec:economic}.
-
+approximately five genuine monthly observations of the target and provides the models with recent information. 
+\begin{comment}
 Finally, even a 100-day window does not span an annual cycle of approximately
 250 trading days, so no model in this comparison can learn calendar
 seasonality or multi-year interest-rate cycles from its encoder input. This
@@ -428,8 +409,9 @@ restriction applies identically to all models and therefore does not bias the
 comparison between them, but it does bound what any of them could in principle
 achieve; Section~\ref{subsec:limitations} treats it as a threat to the
 external validity of our conclusion.
+\end{comment}
 
-The study applies a direct multi-output forecasting strategy: each model
+A direct multi-output forecasting strategy is used for this study. Each model
 estimates all 100 future changes simultaneously rather than recursively one
 day at a time. The predicted changes are then converted back into
 deposit-volume levels according to
@@ -443,6 +425,7 @@ deposit-volume levels according to
     \label{eq:level_reconstruction}
 \end{equation}
 
+
 \indent Only information available up to time $t$ is used for model estimation
 and for fitting the feature scaler, which is a robust scaler estimated on the
 training window alone. Actual covariate values within the 100 forecast days
@@ -453,8 +436,7 @@ known in advance are supplied for the entire forecast horizon.
 \subsection{Model Specifications}
 
 \paragraph{Naive benchmarks.}
-Two naive benchmarks are used, and we name them by their construction rather
-than by the ambiguous label ``random walk''. The \emph{one-step drift}
+Two naive benchmarks are used. The \emph{one-step drift}
 benchmark extrapolates the single most recently observed daily change at a
 constant rate,
 \begin{equation*}
@@ -462,23 +444,21 @@ constant rate,
 \end{equation*}
 that is, an ARIMA$(0,1,0)$ process whose drift is estimated from one
 observation rather than from the training average. The
-\emph{constant-level} benchmark, which is the random walk without drift in the
-conventional sense, assumes the level remains unchanged,
-$\hat{y}_{t_0+h} = y_{t_0}$. Both benchmarks are fully interpretable, require
-no covariates, and serve as the reference against which the estimated models
-are compared. Because the interpolated target is locally very smooth
+\emph{constant-level} benchmark assumes the level remains unchanged,
+$\hat{y}_{t_0+h} = y_{t_0}$. 
+\begin{comment}
+%Both benchmarks are fully interpretable, require
+%no covariates, and serve as the reference against which the estimated models
+%are compared.  Because the interpolated target is locally very smooth
 (Section~\ref{subsec:interpolation}), the one-step drift benchmark is a
 demanding reference at short horizons and a fragile one at long horizons,
-which is visible in the results.
+which is visible in the results.\end{comment}
 
 \paragraph{Linear regression (Ridge).}
 A multi-output ridge regression maps the flattened 100-day lookback window to
-the 100-step forecast vector, regularized by an $\ell_2$ penalty $\alpha$
-selected via time-series cross-validation. As a linear model, Ridge yields
-directly inspectable coefficients. The flattened design matrix is
-high-dimensional -- 100 time steps times the number of covariates and their
-lags -- and heavily collinear, which makes shrinkage not merely convenient but
-structurally necessary.
+the 100-step forecast vector, regularized by an $\ell_2$ penalty $\alpha$. As a linear model, Ridge yields
+directly inspectable coefficients. Also, the flattened feature vector is
+high-dimensional and strongly collinear, so it makes shrinkage adequate.
 
 \paragraph{XGBoost.}
 Gradient-boosted regression trees are trained on the same flattened input
@@ -488,32 +468,26 @@ Boosted trees can capture non-linear covariate interactions that Ridge cannot
 \citep[Ch.~10]{hastie2009}, while remaining moderately interpretable.
 
 \paragraph{Feedforward neural network (FFN).}
-The FFN is a multilayer perceptron with ReLU activations trained to predict
-the 100-step output vector directly. Contrary to a common shortcut in
-benchmark studies, the FFN is \emph{tuned under the same protocol and the same
-budget} as Ridge and XGBoost (Section~\ref{subsec:tuning}); its layer
-configuration and $\ell_2$ penalty are selected by the same chronological
-cross-validation rather than fixed a priori. Training uses the Adam optimizer
-with early stopping on the chronologically last $15\%$ of the training window,
-with a patience of 20 epochs and a cap of 500 epochs. Using a chronological
-rather than a shuffled validation split matters here, because with $L=100$ the
-training sequences overlap heavily: a shuffled split would place later windows
-in the training set and earlier, overlapping windows in validation, leaking
-future information into the early-stopping decision.
+The FFN is a multilayer perceptron with ReLU activations that predicts the
+100-step output vector directly. Its layer configuration and $\ell_2$
+penalty are selected using the same chronological cross-validation procedure
+and tuning budget as Ridge and XGBoost
+(Section~\ref{subsec:tuning}). Training uses the Adam optimizer and early
+stopping on the final $15\%$ of the training window, with a patience of
+20 epochs and a maximum of 500 epochs. The chronological validation split
+preserves the time ordering of the observations, although adjacent 100-day
+sequences may still overlap.
 
 \paragraph{Temporal Fusion Transformer (TFT).}
-Unlike the models above, the TFT explicitly distinguishes between \emph{known}
-future inputs and \emph{unknown} future inputs \citep{lim2021}. The known
-future inputs are calendar features that are exactly determined for every
-future date -- weekday, month-end indicator, and day of month -- and are
-computed from the actual future dates rather than carried forward. The unknown
-future inputs are the macro-financial covariates, which are held at their last
-observed value over the horizon. The encoder length is set to $L=100$ to match
+The TFT explicitly
+distinguishes between known future inputs (calendar features: weekday, month-end indicator,
+day-of-month) and unknown future inputs (the six macro-financial covariates). The encoder length is set to $L=100$ to match
 the other models, and the model is trained with early stopping on validation
 loss with a patience of five validation checks. Despite being the most complex
 model considered, its attention mechanism was explicitly designed to offer a
 degree of interpretability that purely black-box models lack.
 
+\medskip
 Each model is fitted \(S=5\) times to form an ensemble. Ridge, FFN and XGBoost
 use bootstrap-resampled training sequences together with different random
 seeds; repeated TFT fits differ in the random seed only. Ensemble members are
@@ -529,17 +503,18 @@ by grid search with a three-fold chronological \texttt{TimeSeriesSplit} and
 mean absolute error as the selection criterion. Hyperparameters are re-tuned
 at every forecast origin using only data available at that origin, so that no
 configuration selected on a later window is transferred to an earlier one.
-Table~\ref{tab:hyperparams} documents the complete search space; the TFT
+Table~\ref{tab:hyperparams} documents the complete search space.
+\begin{comment}; the TFT
 architecture is fixed a priori at the configuration shown, since a grid search
 over the transformer was not computationally feasible within the same budget.
-This last asymmetry works \emph{against} our headline conclusion rather than
-for it and is noted as a limitation in Section~\ref{subsec:limitations}.
+This asymmetry may disadvantage the TFT relative to the grid-searched models
+and is therefore considered a limitation in ~\ref{subsec:limitations}.
+\end{comment}
 
 \begin{table}[htbp]
     \centering
     \small
-    \caption{Hyperparameter search spaces and fixed settings. All searched
-    models stay within the common budget of twelve configurations.}
+    \caption{Hyperparameter search spaces and fixed settings.}
     \label{tab:hyperparams}
     \begin{tabularx}{\textwidth}{l X c}
         \toprule
@@ -568,19 +543,21 @@ for it and is noted as a limitation in Section~\ref{subsec:limitations}.
 \subsection{Covariate Specifications}
 \label{subsec:covariates}
 
-To assess the predictive value of different economic information, each
-non-naive model is evaluated using the nine predefined covariate sets shown in
-Table~\ref{tab:covariate_sets}. These specifications compare economically
-related variable groups, individual interest-rate variables, and subsets of
-the complete dataset. Each set is lag-augmented according to
-Equation~\eqref{eq:lags}. The final column reports the identifier used in the
-accompanying code and in the figure filenames, so that every figure in this
-paper can be traced to the specification that produced it.
+To compare how different types of economic information affect forecast
+accuracy, each non-naive model is evaluated with the nine covariate sets
+listed in Table~\ref{tab:covariate_sets}. These include grouped economic
+variables, individual interest-rate variables, and subsets of the full
+predictor set. For Ridge, the FFN and XGBoost, each covariate is supplemented
+with lags of 1, 5 and 20 calendar days, as defined in
+Equation~\eqref{eq:laggedcoveq}. The TFT instead uses the selected covariates
+as sequential inputs and does not require these additional lagged features.
+The ``Code label'' column gives the identifier used in the code and figure
+filenames.
 
 \begin{table}[htbp]
     \centering
     \small
-    \caption{Covariate specifications and corresponding code identifiers.}
+    \caption{Covariate specifications.}
     \label{tab:covariate_sets}
     \begin{tabularx}{\textwidth}{l X l}
         \toprule
@@ -606,28 +583,24 @@ paper can be traced to the specification that produced it.
 \subsection{Rolling-Origin Evaluation}
 \label{subsec:rolling_evaluation}
 
-Forecasting performance is assessed using an expanding-window rolling-origin
-design. At each forecast origin \(o_k\), all observations available up to that
-date form the training sample, while the following \(H=100\) days form the
-evaluation window:
+Forecasting performance is evaluated using an expanding-window rolling-origin
+design. At each origin \(o_k\), all observations available up to that date form
+the training sample, and the following \(H=100\) days form the evaluation
+window:
 \begin{equation*}
     \mathcal{T}_k=\{1,\ldots,o_k\},
     \qquad
     \mathcal{E}_k=\{o_k+1,\ldots,o_k+H\}.
 \end{equation*}
-The models are re-estimated, and their hyperparameters re-selected, at every
-origin as newly observed data becomes available. The evaluation uses four
-origins: 1 January 2009, 1 January 2013, 1 March 2019, and 1 June 2025. These
-dates were selected to represent distinct interest-rate and macroeconomic
-regimes -- the 2008/2009 financial crisis, the subsequent low-interest-rate
-period, the pre-COVID environment, and the aftermath of the post-2022
-tightening cycle -- rather than a dense monthly rolling scheme, in order to
-test model robustness across qualitatively different economic conditions. The
-earliest origin is additionally constrained by the training requirement of
-$L + H = 200$ observations per sequence discussed in
-Section~\ref{sec:framework}. The price of this design choice is a very small
+Models and hyperparameters are re-estimated at every origin. The four origins
+are 1 January 2009, 1 January 2013, 1 March 2019, and 1 June 2025, representing
+the financial crisis, the low-interest-rate period, the pre-COVID period, and
+the post-2022 tightening cycle. The 2009 origin has the shortest training
+history.
+\begin{comment}The price of this design choice is a very small
 number of evaluation points, which we address directly in
 Sections~\ref{subsec:evaluation_metrics} and~\ref{subsec:selection}.
+\end{comment}
 
 \subsection{Evaluation Metrics}
 \label{subsec:evaluation_metrics}
@@ -665,15 +638,9 @@ where \(\overline{y}_k\) is the mean observed volume in evaluation window
 benchmark.
 
 \paragraph{A scale-free measure.}
-Absolute errors in EUR billions are not comparable across our four origins,
-because the deposit stock itself grows strongly over the sample: an error of
-$10$~Bn.~\texteuro{} in 2009 represents a far larger relative deviation than
-the same error in 2025. Averaging absolute MAE across origins therefore
-implicitly overweights the later, higher-level windows, and the resulting
-standard deviation conflates genuine model instability with a pure level
-effect. Following the logic of scaled error measures
-\citep{hyndman2006mase}, we additionally report the error relative to the
-constant-level benchmark at the same origin,
+Absolute MAE is not directly comparable across forecast origins because the
+deposit stock increases over time. We therefore scale each model's MAE by the
+constant-level benchmark at the same origin:
 \begin{equation}
     \operatorname{relMAE}_k
     =
@@ -681,17 +648,15 @@ constant-level benchmark at the same origin,
          {\operatorname{MAE}_k^{\text{constant-level}}},
     \label{eq:relmae}
 \end{equation}
-so that $\operatorname{relMAE} = 1$ denotes parity with a forecaster who
-assumes nothing changes, and values below one denote improvement. This
-quantity is dimensionless, comparable across regimes, and is the measure on
-which we base our answer to RQ1.
+where $\operatorname{relMAE}=1$ indicates equal performance and values below
+one indicate an improvement over the benchmark. This dimensionless measure
+allows comparison across forecast periods \citep{hyndman2006mase}.
 
 \paragraph{Reporting.}
-Metrics are calculated separately at each forecast origin and summarized by
-their mean and standard deviation across origins; the complete per-origin
-matrix is reproduced in Appendix~\ref{app:additional} rather than only
-aggregated, since with four observations an aggregate conceals more than it
-reveals. The primary comparison uses MAE on the reconstructed levels and
+Metrics are calculated separately at each forecast origin and summarised by
+their mean and standard deviation across origins. Because only four origins
+are available, the complete origin-level results are also reported in
+Appendix~\ref{app:additional}. The primary comparison uses MAE on the reconstructed levels and
 $\operatorname{relMAE}$; RMSE and \(R^2\) provide complementary information,
 and metrics on first differences serve as diagnostics. A Diebold--Mariano test
 \citep{dieboldmariano1995} with the small-sample correction of
@@ -708,21 +673,17 @@ Model comparisons are therefore reported descriptively throughout.
 
 \subsection{Forecasting Performance}
 
-Table~\ref{tab:overall_results} reports, for each model, the covariate
+Table ~\ref{tab:overall_results} reports the forecasting performance of each model. The covariate
 specification with the lowest mean level MAE across the four origins, together
-with the scale-free measure of Equation~\eqref{eq:relmae}. The selection of
+with the scale-free measure of Equation~\eqref{eq:relmae} is specified. The selection of
 the covariate set is discussed critically in Section~\ref{subsec:selection}.
 
 \begin{table}[htbp]
 \centering
 \small
 \caption{Forecasting performance across the four rolling origins (2009, 2013,
-2019, 2025). MAE and RMSE are measured in EUR billions and reported as mean
-$\pm$ standard deviation across origins. $\operatorname{relMAE}$ is the mean
-ratio to the constant-level benchmark at the same origin
-(Equation~\eqref{eq:relmae}); values below one indicate improvement over that
-benchmark. Estimated models are shown with their best covariate
-specification; naive benchmarks use no covariates.}
+2019, 2025). With MAE and RMSE measured in EUR billions and reported as mean
+$\pm$ standard deviation across origins.}
 \label{tab:overall_results}
 \begin{tabularx}{\textwidth}{l X c c c c}
 \toprule
@@ -773,127 +734,121 @@ Constant level
 & $1.00$ \\
 \bottomrule
 \end{tabularx}
+\vspace{2pt}
+\parbox{\textwidth}{\footnotesize
+\textit{Note:} MAE and RMSE are calculated on reconstructed deposit-volume
+levels. relMAE is the MAE relative to the constant-level benchmark at the same
+origin; values below one indicate improvement over that benchmark.
+}
 \end{table}
 
 Ridge achieved the lowest average MAE and was the only approach with a
 positive mean $R^2$. The TFT ranked second, followed by the one-step drift
 benchmark. Neither the FFN nor XGBoost improved on that simple benchmark on
-average, and the constant-level forecast produced the largest errors by a wide
-margin. Greater model complexity therefore did not translate into higher
-forecasting accuracy, even though every estimated model received the same
-information set, the same 100-day lookback window, the same lag structure, and
-the same tuning budget.
+average, and the constant-level forecast produced the largest errors. Greater model complexity therefore did not consistently translate into higher
+forecasting accuracy. 
 
 \paragraph{Answering RQ1.}
-The absolute figures alone do not answer the question of how accurate these
-forecasts are, because they are not scale-free. The $\operatorname{relMAE}$
-column supplies that answer: over a 100-day horizon, the best model reduces
-the mean absolute error to $44\%$ of what a forecaster achieves who simply
-assumes the deposit stock does not change, averaged across four very
-different economic environments. The one-step drift benchmark achieves $60\%$,
-and the two nonlinear machine-learning models around $70\%$. In other words,
-all methods extract genuine signal relative to a do-nothing forecast, but the
-spread between the best estimated model and a two-line naive rule is far
-smaller than the spread between either of them and no model at all.
+Forecast accuracy is determined mainly by the $\operatorname{relMAE}$, since
+absolute errors are affected by the level of the deposit stock. Over the
+100-day horizon, Ridge records an error equal to $44\%$ of the constant-level
+benchmark. The one-step drift benchmark records $60\%$, while XGBoost and the
+FFN record $69\%$ and $71\%$, respectively. Thus, all methods improve on the
+constant-level benchmark, although Ridge's improvement over the one-step
+drift forecast is smaller. Figure~\ref{fig:model_comparison} also shows that the
+standard-deviation bars overlap almost completely, which is the visual form of
+the statistical caveat stated in Section~\ref{subsec:evaluation_metrics}: with
+four origins, this ranking describes a sample, not a population.
 
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=0.95\textwidth]{model_comparison.jpeg}
-    \caption{Mean level MAE (EUR billions, vertical axis) per model, each in
-    its best-performing covariate specification, averaged over the four
-    rolling origins (2009, 2013, 2019, 2025). Error bars denote one standard
-    deviation across origins. The reference line marks the one-step drift
-    benchmark; only bars below this line improve on a naive rule.}
+    \caption{Mean MAE of reconstructed deposit-volume levels across the four
+forecast origins (2009, 2013, 2019 and 2025). Each model is shown using its
+lowest-MAE covariate specification, and error bars indicate one standard
+deviation across origins. The horizontal line marks the one-step drift
+benchmark.}
     \label{fig:model_comparison}
 \end{figure}
 
-Figure~\ref{fig:model_comparison} visualises the ranking of
-Table~\ref{tab:overall_results}. Only Ridge lies clearly below the naive
-reference, while the FFN and XGBoost fall on or beyond it. The
-standard-deviation bars overlap almost completely, which is the visual form of
-the statistical caveat stated in Section~\ref{subsec:evaluation_metrics}: with
-four origins, this ranking describes a sample, not a population.
+
 
 \subsection{Accuracy Versus Robustness}
 
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=0.85\textwidth]{performance_vs_stability.jpeg}
-    \caption{Trade-off between forecast accuracy (mean level MAE, horizontal
-    axis, EUR billions) and regime robustness (standard deviation of level MAE
-    across the four rolling origins, vertical axis). Points closer to the
-    lower-left corner are simultaneously accurate and stable.}
+    \caption{Forecast accuracy and stability across all model--covariate
+combinations. The horizontal axis shows mean level MAE across the four
+forecast origins, while the vertical axis shows its standard deviation.
+Lower values indicate greater accuracy and stability. The dashed lines mark
+the mean MAE and standard deviation of the one-step drift benchmark.}
     \label{fig:perf_vs_stability}
 \end{figure}
 
-Figure~\ref{fig:perf_vs_stability} shows that, measured in absolute euros,
-accuracy and robustness are attained by different models: Ridge is the most
-accurate but has the largest dispersion ($\pm 11.11$), whereas the FFN is the
-most stable ($\pm 6.90$) at a distinctly higher error level. No model reaches
-the lower-left corner.
+Figure~\ref{fig:perf_vs_stability} compares forecast accuracy and stability
+for all model-covariate combinations. Ridge has the most specifications lying on the lower-left region, indicating both lower mean MAE and lower dispersion
+than the one-step drift benchmark. Ridge is the most accurate model across covariate specifications, whereas the FFN specification using
+macroeconomic covariates has the lowest absolute dispersion
+($\pm 6.90$).
 
-This apparent trade-off, however, is largely an artefact of the scale problem
-described in Section~\ref{subsec:evaluation_metrics}. Once errors are
-normalised by the constant-level benchmark at the same origin, the ordering
-changes materially. Ridge attains the lowest dispersion of all estimated
-models ($\pm 0.31$ in $\operatorname{relMAE}$), marginally ahead of the FFN
-($\pm 0.34$), while XGBoost becomes by far the least stable ($\pm 0.64$).
-Furthermore, the ranking of the two nonlinear models reverses: XGBoost is
-worse than the FFN in absolute MAE ($12.71$ versus $11.85$) but better in
-$\operatorname{relMAE}$ ($0.69$ versus $0.71$), because its largest absolute
-errors occur at the origin with the highest deposit level, where they are
-proportionally less severe. This reversal is a concrete illustration of why a
-scale-free measure is not a cosmetic addition in a sample whose level roughly
-doubles.
+However, after normalising errors by the constant-level benchmark, Ridge
+achieves the lowest dispersion among the selected models
+($0.31$ in $\operatorname{relMAE}$), followed by the FFN ($0.34$) and 
+XGBoost ($0.64$). Moreover, XGBoost achieves an average
+$\operatorname{relMAE}$ of $0.69$, compared with $0.71$ for the FFN. This
+shows why absolute errors are not directly comparable across forecast origins
+with different deposit levels.
 
 \subsection{Effect of Covariate Selection}
 
-The preferred covariate specification differed across models. Ridge performed
-best with all six explanatory variables ($9.36$), narrowly ahead of the
-specification excluding the DAX ($9.48$). The FFN and TFT both obtained their
-lowest MAE using only geopolitical risk and inflation ($11.85$ and $10.78$
-respectively). XGBoost performed best when inflation was excluded ($12.71$).
+The preferred covariate specification differs across models, as reported in
+Table~\ref{tab:overall_results}. The complete results for all nine
+specifications are presented in
+Figure~\ref{fig:covariate_results_full} in the appendix.
 
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=0.95\textwidth]{best_set_per_model.jpeg}
-    \caption{Mean level MAE (EUR billions, vertical axis) of each model across
-    the nine covariate specifications of Table~\ref{tab:covariate_sets},
-    averaged over the four rolling origins. The lowest bar per model
-    identifies the specification reported in
-    Table~\ref{tab:overall_results}.}
-    \label{fig:best_set_per_model}
-\end{figure}
+Ridge is comparatively stable, with mean MAE ranging from $9.36$ to
+$11.81$ EUR bn across the nine specifications. This corresponds to an
+increase of $26.2\%$ from its best to its worst specification. XGBoost shows
+a similar increase of $26.3\%$, with mean MAE ranging from $12.71$ to
+$16.05$ EUR bn. The TFT is more sensitive, ranging from $10.78$ to
+$14.93$ EUR bn, an increase of $38.5\%$. The FFN is the most sensitive to
+the selected covariates, with mean MAE ranging from $11.85$ to
+$21.14$ EUR bn, an increase of $78.4\%$.
 
-Figure~\ref{fig:best_set_per_model} shows that sensitivity to the covariate
-set is itself model-dependent, and dramatically so. Ridge varies within a
-narrow band across all nine specifications (from $9.36$ to $11.81$, a spread
-of $26\%$), which is the behaviour expected of a shrinkage estimator: adding
-weakly informative regressors costs little, because their coefficients are
-pulled towards zero. The FFN varies by a factor of nearly two (from $11.85$
-to $21.14$) and XGBoost by a factor of $1.3$ (from $12.71$ to $16.05$). For
-the nonlinear models, therefore, the choice of covariate set is a larger
-determinant of accuracy than the choice of architecture -- a result that
-inverts the usual emphasis of model-comparison studies. The effect is
-amplified by the input dimensionality that $L=100$ implies: each additional
-covariate contributes 100 further columns to the flattened design matrix
-before lags are counted, so specification choices translate into large changes
-in the number of parameters the flexible models must estimate.
+Ridge's relatively narrow range is consistent with the effect of
+$\ell_2$ regularization, which shrinks the coefficients of weakly informative
+predictors towards zero. For Ridge, the FFN and XGBoost, changing the
+covariate specification also changes the size of the flattened input vector.
+With a 100-day lookback and the current value together with lags of 1, 5 and
+20 days, each additional covariate contributes 400 input values. This increase
+in dimensionality may partly explain the greater sensitivity of the FFN. The
+TFT processes the covariates sequentially and is therefore not affected by
+the flattened input dimension in the same way.
 
-We caution against a causal reading. These differences describe how each
-functional form exploits the available regressors on this sample; they are not
-evidence that geopolitical risk and inflation \emph{drive} deposit volumes
-while the deposit rate does not.
+Overall, the results show that adding more predictors does not necessarily
+improve forecast accuracy. The selected specifications describe predictive
+performance within this sample and should not be interpreted as evidence of
+causal relationships between the covariates and deposit volumes..
 
 \subsection{Variation Across Forecast Origins}
+
+Forecast accuracy varies considerably across the four evaluation periods.
+Over the six methods reported in Table~\ref{tab:overall_results},
+the average mean level MAE is approximately $27.9$ Bn.\ EUR at the 2009 origin, compared
+with $3.6$, $8.3$, and $9.4$ Bn.\ EUR at the 2013, 2019, and 2025 origins,
+respectively. The 2009 period accounts for a substantial part of the
+dispersion in the aggregate results. This origin combines the global financial
+crisis with the smallest available training sample. Given the $L=100$
+lookback and $H=100$ forecast horizon, the effects of the economic regime and
+limited training history cannot be separated completely.
 
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=\textwidth]{mae_per_covariate_per_time.jpeg}
-    \caption{Level MAE (EUR billions) per covariate specification, resolved by
-    forecast origin (2009, 2013, 2019, 2025). Each panel corresponds to one
-    origin; lower values indicate better forecasts. Note the differing
-    vertical scales across panels.}
+    \caption{Level MAE across covariate specifications, separated by model and
+    forecast origin. Each panel represents one model, while the colours identify
+    the four forecast origins. Lower values indicate better forecast performance.}
     \label{fig:mae_covariate_time}
 \end{figure}
 
@@ -917,64 +872,41 @@ while the deposit rate does not.
     \label{fig:rolling_summary}
 \end{figure}
 
-Forecasting performance varied substantially across the four evaluation
-periods, and the variation is driven overwhelmingly by a single origin.
-Averaged over the six model configurations of
-Table~\ref{tab:overall_results}, the mean level MAE was approximately
-$27.9$~Bn.~\texteuro{} at the January 2009 origin, but only $3.6$, $8.3$ and
-$9.4$~Bn.~\texteuro{} at the 2013, 2019 and 2025 origins respectively. The
-crisis origin is therefore roughly three times harder than any other and
-accounts for nearly all of the reported cross-origin dispersion: excluding it,
-Ridge's standard deviation falls from $\pm 11.11$ to well under
-$3$~Bn.~\texteuro. Figures~\ref{fig:rolling_timeline}
-and~\ref{fig:rolling_summary} make the same point graphically -- the error
-level is dominated by the difficulty of the forecast window, not by the choice
-of model. It is also the origin with the smallest training sample under the
-$L+H=200$ sequence requirement (Section~\ref{sec:framework}), so difficulty and
-data scarcity coincide there.
-
-Two further observations follow from Figure~\ref{fig:mae_covariate_time}.
-First, no model dominated at every origin. Ridge was best in 2013 and
-competitive in 2019 and 2025, but the FFN produced the single lowest error at
-the 2009 crisis origin ($20.18$~Bn.~\texteuro, against $25.71$ for Ridge and
-$30.20$ for XGBoost), and the TFT the lowest at the 2025 origin
-($2.43$~Bn.~\texteuro, against $6.05$ for Ridge). Second, the covariate
-specification that minimises MAE also differs by origin for every model, so
-that the ``best sets'' of Table~\ref{tab:overall_results} are not stable
-recommendations but sample-specific optima.
+Both figures~\ref{fig:covariates_by_origin}--\ref{fig:mae_distribution} show
+that no model dominates across all forecast origins. The FFN records the
+lowest error in 2009, Ridge performs best in 2013 and remains competitive in
+2019 and 2025, while the TFT records the lowest error at the 2025 origin.
+Moreover, the best-performing covariate specification changes across origins
+for every model. The aggregate rankings should then be interpreted as average performance across different economic periods, rather than as evidence that one model or covariate specification is consistently superior.
 
 \subsection{Interpreting the Selection Procedure}
 \label{subsec:selection}
 
-Three features of the design mean that Table~\ref{tab:overall_results}
-overstates the achievable accuracy of the estimated models, and we state them
-here rather than in a footnote.
+Reported model rankings must be interpreted cautiously because of three features.
 
-First, for each estimated model the reported figure is the \emph{minimum}
-across nine covariate specifications, evaluated on the same four windows used
-for reporting. A minimum over nine draws is downward-biased even under the
-null hypothesis that no specification is genuinely better. The naive
+First, for each estimated model, the
+reported value is the lowest mean MAE across nine covariate specifications,
+selected using the same four rolling origins used for evaluation. The naive
 benchmarks enjoy no such freedom, so the reported margin of Ridge over the
 one-step drift benchmark ($9.36$ versus $11.78$, or $20.5\%$) is an upper
 bound on the margin one should expect out of sample.
 
-Second, the four origins were themselves chosen ex post to represent
-recognisable regimes, which is defensible as a robustness design but means
-they are not a random sample of forecast dates.
+Second, the four origins were deliberately chosen to represent different
+economic periods rather than sampled randomly. The results therefore cannot
+be assumed to represent all possible forecast periods.
 
-Third, with $n=4$ the empirical standard deviations in
-Table~\ref{tab:overall_results} are themselves estimated very imprecisely, and
-the boxplots of Figure~\ref{fig:rolling_summary} overlap for every pair of
-estimated models. A formal Diebold--Mariano comparison on four paired
-observations would have negligible power, and we therefore do not report one.
+Third, standard deviations based on only four origins are estimated
+imprecisely. A formal Diebold-Mariano comparison of forecast accuracy would also have very
+low power with so few independent origin-level observations.
 
-The appropriate reading of our results is consequently the following: the
-evidence does \emph{not} establish that Ridge is superior to the TFT, since
-their intervals overlap. What it does establish, and what is robust to all
-three caveats above, is the absence of any measurable advantage from the
-additional complexity, since the more flexible models fail to beat a
-two-parameter benchmark even when granted the advantage of ex-post
-specification search that the benchmark is denied.
+The results therefore do not establish that Ridge is always superior.
+However, they provide no evidence that greater model complexity consistently
+improves accuracy: TFT only slightly outperforms the drift benchmark,
+while the FFN and XGBoost do not, and none of them outperforms Ridge on
+average.
+
+
+%Xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 % ---------------------------------------------------------------------------
 % 6. Discussion
@@ -1436,6 +1368,17 @@ Constant level & None
 \bottomrule
 \end{tabularx}
 \end{table}
+
+\begin{figure}[p]
+    \centering
+    \includegraphics[width=\textwidth]{covariate_results_full.png}
+    \caption{Complete forecasting results across the nine covariate
+    specifications. MAE and RMSE are measured in EUR billions and reported
+    as mean $\pm$ standard deviation across the four rolling forecast
+    origins. Specifications are ordered by mean MAE within each model, and
+    the best specification for each estimated model is shown in bold.}
+    \label{fig:covariate_results_full}
+\end{figure}
 
 \originsgrid
   {forecast_ffn_nur_makro_2009-01-01.png}

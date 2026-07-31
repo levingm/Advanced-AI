@@ -1,329 +1,48 @@
 This is BibTeX, Version 0.99d (TeX Live 2024)
 Capacity: max_strings=200000, hash_size=200000, hash_prime=170003
 The top-level auxiliary file: Paper_claude.aux
-The style file: apalike.bst
-Database file #1: references.bib
-You're missing a field name---line 1 of file references.bib
- : @article{jarrow1998,          
- :                               % [VERIFY]
-I'm skipping whatever remains of this entry
-You're missing a field name---line 11 of file references.bib
- : @article{hutchison1996,       
- :                               % [VERIFY]
-I'm skipping whatever remains of this entry
-You're missing a field name---line 21 of file references.bib
- : @techreport{obrien2000,       
- :                               % [VERIFY]
-I'm skipping whatever remains of this entry
-You're missing a field name---line 29 of file references.bib
- : @article{frauendorfer2003,    
- :                               % [VERIFY]
-I'm skipping whatever remains of this entry
-You're missing a field name---line 39 of file references.bib
- : @article{kalkbrener2004,      
- :                               % [VERIFY]
-I'm skipping whatever remains of this entry
-You're missing a field name---line 49 of file references.bib
- : @article{blochlinger2015,     
- :                               % [VERIFY]
-I'm skipping whatever remains of this entry
-You're missing a field name---line 58 of file references.bib
- : @article{nystrom2008,         
- :                               % [VERIFY]
-I'm skipping whatever remains of this entry
-You're missing a field name---line 68 of file references.bib
- : @article{hewamalage2021,      
- :                               % [VERIFY]
-I'm skipping whatever remains of this entry
-You're missing a field name---line 78 of file references.bib
- : @article{makridakis2020m4,    
- :                               % [VERIFY]
-I'm skipping whatever remains of this entry
-You're missing a field name---line 88 of file references.bib
- : @article{makridakis2022m5,    
- :                               % [VERIFY]
-I'm skipping whatever remains of this entry
-You're missing a field name---line 98 of file references.bib
- : @inproceedings{zeng2023transformers,  
- :                                       % [VERIFY]
-I'm skipping whatever remains of this entry
-You're missing a field name---line 108 of file references.bib
- : @article{lim2021,             
- :                               % [VERIFY]
-I'm skipping whatever remains of this entry
-You're missing a field name---line 118 of file references.bib
- : @inproceedings{chen2016,      
- :                               % [VERIFY]
-I'm skipping whatever remains of this entry
-You're missing a field name---line 126 of file references.bib
- : @book{hastie2009,             
- :                               % [VERIFY]
-I'm skipping whatever remains of this entry
-You're missing a field name---line 134 of file references.bib
- : @book{box2015,                
- :                               % [VERIFY]
-I'm skipping whatever remains of this entry
-You're missing a field name---line 142 of file references.bib
- : @article{hyndman2006mase,     
- :                               % [VERIFY]
-I'm skipping whatever remains of this entry
-You're missing a field name---line 152 of file references.bib
- : @article{dieboldmariano1995,  
- :                               % [VERIFY]
-I'm skipping whatever remains of this entry
-You're missing a field name---line 162 of file references.bib
- : @article{harvey1997,          
- :                               % [VERIFY]
-I'm skipping whatever remains of this entry
-You're missing a field name---line 172 of file references.bib
- : @article{fritsch_carlson,     
- :                               % [VERIFY]
-I'm skipping whatever remains of this entry
-You're missing a field name---line 182 of file references.bib
- : @article{gpr_index,           
- :                               % [VERIFY]  (Caldara & Iacoviello GPR index)
-I'm skipping whatever remains of this entry
-You're missing a field name---line 194 of file references.bib
- : @techreport{bcbs2016irrbb,    
- :                               % [VERIFY]
-I'm skipping whatever remains of this entry
-You're missing a field name---line 202 of file references.bib
- : @techreport{eba2022irrbb,     
- :                               % [VERIFY]
-I'm skipping whatever remains of this entry
-You're missing a field name---line 210 of file references.bib
- : @techreport{ecb2011monetary,  
- :                               % [TODO] confirm exact title/year/edition
-I'm skipping whatever remains of this entry
-You're missing a field name---line 219 of file references.bib
- : @mastersthesis{winkler2025,   
- :                               % [TODO] fill author first name, title, university, year
-I'm skipping whatever remains of this entry
-You're missing a field name---line 226 of file references.bib
- : @article{marena2022nonmaturing, 
- :                                 % [TODO] fill full details
-I'm skipping whatever remains of this entry
-You're missing a field name---line 233 of file references.bib
- : @article{schlueter2015bank,   
- :                               % [TODO] fill full details
-I'm skipping whatever remains of this entry
-You're missing a field name---line 242 of file references.bib
- : @misc{bundesbank_data,        
- :                               % [TODO] add exact series title + URL + urldate
-I'm skipping whatever remains of this entry
-You're missing a field name---line 249 of file references.bib
- : @misc{bundesbank2024financing, 
- :                                % [TODO]
-I'm skipping whatever remains of this entry
-You're missing a field name---line 257 of file references.bib
- : @misc{bundesbank_bonds,       
- :                               % [TODO]
-I'm skipping whatever remains of this entry
-You're missing a field name---line 264 of file references.bib
- : @misc{ecb_estr,               
- :                               % [TODO]
-I'm skipping whatever remains of this entry
-You're missing a field name---line 271 of file references.bib
- : @misc{ecb_preestr,            
- :                               % [TODO]
-I'm skipping whatever remains of this entry
-You're missing a field name---line 278 of file references.bib
- : @misc{destatis_inflation,     
- :                               % [TODO]
-I'm skipping whatever remains of this entry
-You're missing a field name---line 285 of file references.bib
- : @misc{yahoo_finance_dax,      
- :                               % [TODO]
-I'm skipping whatever remains of this entry
-You're missing a field name---line 292 of file references.bib
- : @misc{yfinance,               
- :                               % [TODO] confirm author/version
-I'm skipping whatever remains of this entry
-Warning--to sort, need author or key in bcbs2016irrbb
-Warning--to sort, need author or key in schlueter2015bank
-Warning--to sort, need author or key in ecb2011monetary
-Warning--to sort, need author or key in winkler2025
-Warning--to sort, need author or key in marena2022nonmaturing
-Warning--to sort, need author or key in jarrow1998
-Warning--to sort, need author or key in hutchison1996
-Warning--to sort, need author or key in obrien2000
-Warning--to sort, need author or key in frauendorfer2003
-Warning--to sort, need author or key in kalkbrener2004
-Warning--to sort, need author or key in blochlinger2015
-Warning--to sort, need author or key in nystrom2008
-Warning--to sort, need author or key in eba2022irrbb
-Warning--to sort, need author or key in hewamalage2021
-Warning--to sort, need author or key in makridakis2020m4
-Warning--to sort, need author or key in makridakis2022m5
-Warning--to sort, need author or key in zeng2023transformers
-Warning--to sort, need author or key in bundesbank_data
-Warning--to sort, need author or key in bundesbank2024financing
-Warning--to sort, need author or key in ecb_estr
-Warning--to sort, need author or key in gpr_index
-Warning--to sort, need author or key in destatis_inflation
-Warning--to sort, need author or key in yfinance
-Warning--to sort, need author or key in yahoo_finance_dax
-Warning--to sort, need author or key in bundesbank_bonds
-Warning--to sort, need author or key in fritsch_carlson
-Warning--to sort, need author or key in ecb_preestr
-Warning--to sort, need author, editor, or key in box2015
-Warning--to sort, need author or key in lim2021
-Warning--to sort, need author or key in chen2016
-Warning--to sort, need author, editor, or key in hastie2009
-Warning--to sort, need author or key in hyndman2006mase
-Warning--to sort, need author or key in dieboldmariano1995
-Warning--to sort, need author or key in harvey1997
-Warning--empty author in bcbs2016irrbb
-Warning--empty year in bcbs2016irrbb
-Warning--empty title in bcbs2016irrbb
-Warning--empty institution in bcbs2016irrbb
-Warning--empty author in schlueter2015bank
-Warning--empty year in schlueter2015bank
-Warning--empty title in schlueter2015bank
-Warning--empty journal in schlueter2015bank
-Warning--empty author in ecb2011monetary
-Warning--empty year in ecb2011monetary
-Warning--empty title in ecb2011monetary
-Warning--empty institution in ecb2011monetary
-Warning--empty author in winkler2025
-Warning--empty year in winkler2025
-Warning--empty title in winkler2025
-Warning--empty school in winkler2025
-Warning--empty author in marena2022nonmaturing
-Warning--empty year in marena2022nonmaturing
-Warning--empty title in marena2022nonmaturing
-Warning--empty journal in marena2022nonmaturing
-Warning--empty author in jarrow1998
-Warning--empty year in jarrow1998
-Warning--empty title in jarrow1998
-Warning--empty journal in jarrow1998
-Warning--empty author in hutchison1996
-Warning--empty year in hutchison1996
-Warning--empty title in hutchison1996
-Warning--empty journal in hutchison1996
-Warning--empty author in obrien2000
-Warning--empty year in obrien2000
-Warning--empty title in obrien2000
-Warning--empty institution in obrien2000
-Warning--empty author in frauendorfer2003
-Warning--empty year in frauendorfer2003
-Warning--empty title in frauendorfer2003
-Warning--empty journal in frauendorfer2003
-Warning--empty author in kalkbrener2004
-Warning--empty year in kalkbrener2004
-Warning--empty title in kalkbrener2004
-Warning--empty journal in kalkbrener2004
-Warning--empty author in blochlinger2015
-Warning--empty year in blochlinger2015
-Warning--empty title in blochlinger2015
-Warning--empty journal in blochlinger2015
-Warning--empty author in nystrom2008
-Warning--empty year in nystrom2008
-Warning--empty title in nystrom2008
-Warning--empty journal in nystrom2008
-Warning--empty author in eba2022irrbb
-Warning--empty year in eba2022irrbb
-Warning--empty title in eba2022irrbb
-Warning--empty institution in eba2022irrbb
-Warning--empty author in hewamalage2021
-Warning--empty year in hewamalage2021
-Warning--empty title in hewamalage2021
-Warning--empty journal in hewamalage2021
-Warning--empty author in makridakis2020m4
-Warning--empty year in makridakis2020m4
-Warning--empty title in makridakis2020m4
-Warning--empty journal in makridakis2020m4
-Warning--empty author in makridakis2022m5
-Warning--empty year in makridakis2022m5
-Warning--empty title in makridakis2022m5
-Warning--empty journal in makridakis2022m5
-Warning--empty author in zeng2023transformers
-Warning--empty year in zeng2023transformers
-Warning--empty title in zeng2023transformers
-Warning--empty booktitle in zeng2023transformers
-Warning--empty year in bundesbank_data
-Warning--empty year in bundesbank2024financing
-Warning--empty year in ecb_estr
-Warning--empty author in gpr_index
-Warning--empty year in gpr_index
-Warning--empty title in gpr_index
-Warning--empty journal in gpr_index
-Warning--empty year in destatis_inflation
-Warning--empty year in yfinance
-Warning--empty year in yahoo_finance_dax
-Warning--empty year in bundesbank_bonds
-Warning--empty author in fritsch_carlson
-Warning--empty year in fritsch_carlson
-Warning--empty title in fritsch_carlson
-Warning--empty journal in fritsch_carlson
-Warning--empty year in ecb_preestr
-Warning--empty author and editor in box2015
-Warning--empty year in box2015
-Warning--empty title in box2015
-Warning--empty publisher in box2015
-Warning--empty author in lim2021
-Warning--empty year in lim2021
-Warning--empty title in lim2021
-Warning--empty journal in lim2021
-Warning--empty author in chen2016
-Warning--empty year in chen2016
-Warning--empty title in chen2016
-Warning--empty booktitle in chen2016
-Warning--empty author and editor in hastie2009
-Warning--empty year in hastie2009
-Warning--empty title in hastie2009
-Warning--empty publisher in hastie2009
-Warning--empty author in hyndman2006mase
-Warning--empty year in hyndman2006mase
-Warning--empty title in hyndman2006mase
-Warning--empty journal in hyndman2006mase
-Warning--empty author in dieboldmariano1995
-Warning--empty year in dieboldmariano1995
-Warning--empty title in dieboldmariano1995
-Warning--empty journal in dieboldmariano1995
-Warning--empty author in harvey1997
-Warning--empty year in harvey1997
-Warning--empty title in harvey1997
-Warning--empty journal in harvey1997
-You've used 34 entries,
-            1935 wiz_defined-function locations,
-            505 strings with 4145 characters,
-and the built_in function-call counts, 7163 in all, are:
-= -- 597
+I found no \citation commands---while reading file Paper_claude.aux
+I found no \bibdata command---while reading file Paper_claude.aux
+I found no \bibstyle command---while reading file Paper_claude.aux
+You've used 0 entries,
+            0 wiz_defined-function locations,
+            83 strings with 498 characters,
+and the built_in function-call counts, 0 in all, are:
+= -- 0
 > -- 0
 < -- 0
-+ -- 5
++ -- 0
 - -- 0
-* -- 676
-:= -- 914
-add.period$ -- 34
-call.type$ -- 34
-change.case$ -- 140
-chr.to.int$ -- 29
-cite$ -- 214
-duplicate$ -- 422
-empty$ -- 760
+* -- 0
+:= -- 0
+add.period$ -- 0
+call.type$ -- 0
+change.case$ -- 0
+chr.to.int$ -- 0
+cite$ -- 0
+duplicate$ -- 0
+empty$ -- 0
 format.name$ -- 0
-if$ -- 1378
-int.to.chr$ -- 6
+if$ -- 0
+int.to.chr$ -- 0
 int.to.str$ -- 0
-missing$ -- 21
-newline$ -- 105
+missing$ -- 0
+newline$ -- 0
 num.names$ -- 0
-pop$ -- 422
-preamble$ -- 1
-purify$ -- 170
+pop$ -- 0
+preamble$ -- 0
+purify$ -- 0
 quote$ -- 0
-skip$ -- 236
+skip$ -- 0
 stack$ -- 0
-substring$ -- 442
+substring$ -- 0
 swap$ -- 0
 text.length$ -- 0
 text.prefix$ -- 0
 top$ -- 0
-type$ -- 200
-warning$ -- 146
+type$ -- 0
+warning$ -- 0
 while$ -- 0
 width$ -- 0
-write$ -- 211
-(There were 34 error messages)
+write$ -- 0
+(There were 3 error messages)

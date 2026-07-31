@@ -9,7 +9,7 @@
 \usepackage[english]{babel}
 \usepackage{amsmath,amssymb}
 \usepackage{textcomp}
-\usepackage[draft]{graphicx}
+\usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{tabularx}
 \usepackage{caption}
@@ -32,10 +32,34 @@
     urlcolor=blue
 }
 
-\graphicspath{{figures/}{Results/}}
+\graphicspath{{figures/}}
 \captionsetup[sub]{font=small}
 
 \newcommand{\estr}{\mbox{\texteuro STR}}
+
+\newcommand{\originsgrid}[6]{%
+  \begin{figure}[htbp]
+    \centering
+    \begin{subfigure}[b]{0.49\textwidth}
+      \includegraphics[width=\textwidth]{#1}
+      \caption{2009-01-01}
+    \end{subfigure}\hfill
+    \begin{subfigure}[b]{0.49\textwidth}
+      \includegraphics[width=\textwidth]{#2}
+      \caption{2013-01-01}
+    \end{subfigure}\\[4pt]
+    \begin{subfigure}[b]{0.49\textwidth}
+      \includegraphics[width=\textwidth]{#3}
+      \caption{2019-03-01}
+    \end{subfigure}\hfill
+    \begin{subfigure}[b]{0.49\textwidth}
+      \includegraphics[width=\textwidth]{#4}
+      \caption{2025-06-01}
+    \end{subfigure}
+    \caption{#5}
+    \label{#6}
+  \end{figure}%
+}
 
 \newtcolorbox{researchquestion}{
     colback=blue!5, colframe=blue!40!black, boxrule=0.6pt,
@@ -165,6 +189,7 @@ procedures we adopt in Section~\ref{subsec:interpolation}.
 \citet{marena2022nonmaturing} also apply ML to NMDs. However, both studies
 evaluate on a single out-of-sample window, which fails to separate
 model superiority from window-specific fit \citep{hewamalage2021}.
+
 
 \paragraph{Complexity in Forecasting}
 Other literature on forecasting already showed that simple statistical and hybrid models systematically beat pure ML methods against complexity \citep{makridakis2020m4, makridakis2022m5}.

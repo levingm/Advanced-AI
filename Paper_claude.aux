@@ -60,6 +60,7 @@
 \newlabel{subsec:interpolation}{{3.2}{5}{Data Alignment and Transformation}{subsection.3.2}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Lagged Covariates}{5}{subsection.3.3}\protected@file@percent }
 \newlabel{subsec:lags}{{3.3}{5}{Lagged Covariates}{subsection.3.3}{}}
+\newlabel{eq:laggedcoveq}{{1}{5}{Lagged Covariates}{equation.3.1}{}}
 \@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Time series of all variables (Jan 2003 -- Sep 2025) after daily PCHIP interpolation and standardization.}}{6}{figure.caption.8}\protected@file@percent }
 \newlabel{fig:timeseries_overview}{{2}{6}{Time series of all variables (Jan 2003 -- Sep 2025) after daily PCHIP interpolation and standardization}{figure.caption.8}{}}
 \citation{box2015}
@@ -70,133 +71,101 @@
 \newlabel{sec:models}{{4}{7}{Forecasting Models}{section.4}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Forecasting Framework}{7}{subsection.4.1}\protected@file@percent }
 \newlabel{sec:framework}{{4.1}{7}{Forecasting Framework}{subsection.4.1}{}}
-\citation{lim2021,zeng2023transformers}
+\citation{chen2016}
+\citation{hastie2009}
 \newlabel{eq:forecasting_problem}{{2}{8}{Forecasting Framework}{equation.4.2}{}}
 \newlabel{eq:level_reconstruction}{{3}{8}{Forecasting Framework}{equation.4.3}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Model Specifications}{8}{subsection.4.2}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Naive benchmarks.}{8}{section*.10}\protected@file@percent }
-\citation{chen2016}
-\citation{hastie2009}
-\citation{lim2021}
-\@writefile{toc}{\contentsline {paragraph}{Linear regression (Ridge).}{9}{section*.11}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{XGBoost.}{9}{section*.12}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Feedforward neural network (FFN).}{9}{section*.13}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Temporal Fusion Transformer (TFT).}{9}{section*.14}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Linear regression (Ridge).}{8}{section*.11}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{XGBoost.}{8}{section*.12}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Feedforward neural network (FFN).}{8}{section*.13}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Temporal Fusion Transformer (TFT).}{8}{section*.14}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Tuning Protocol}{9}{subsection.4.3}\protected@file@percent }
 \newlabel{subsec:tuning}{{4.3}{9}{Tuning Protocol}{subsection.4.3}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Hyperparameter search spaces and fixed settings.}}{9}{table.caption.15}\protected@file@percent }
+\newlabel{tab:hyperparams}{{2}{9}{Hyperparameter search spaces and fixed settings}{table.caption.15}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {4.4}Covariate Specifications}{9}{subsection.4.4}\protected@file@percent }
 \newlabel{subsec:covariates}{{4.4}{9}{Covariate Specifications}{subsection.4.4}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Hyperparameter search spaces and fixed settings. All searched models stay within the common budget of twelve configurations.}}{10}{table.caption.15}\protected@file@percent }
-\newlabel{tab:hyperparams}{{2}{10}{Hyperparameter search spaces and fixed settings. All searched models stay within the common budget of twelve configurations}{table.caption.15}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Covariate specifications and corresponding code identifiers.}}{10}{table.caption.16}\protected@file@percent }
-\newlabel{tab:covariate_sets}{{3}{10}{Covariate specifications and corresponding code identifiers}{table.caption.16}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.5}Rolling-Origin Evaluation}{10}{subsection.4.5}\protected@file@percent }
-\newlabel{subsec:rolling_evaluation}{{4.5}{10}{Rolling-Origin Evaluation}{subsection.4.5}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Covariate specifications.}}{9}{table.caption.16}\protected@file@percent }
+\newlabel{tab:covariate_sets}{{3}{9}{Covariate specifications}{table.caption.16}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.5}Rolling-Origin Evaluation}{9}{subsection.4.5}\protected@file@percent }
+\newlabel{subsec:rolling_evaluation}{{4.5}{9}{Rolling-Origin Evaluation}{subsection.4.5}{}}
 \citation{hyndman2006mase}
-\citation{dieboldmariano1995}
-\citation{harvey1997}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.6}Evaluation Metrics}{11}{subsection.4.6}\protected@file@percent }
-\newlabel{subsec:evaluation_metrics}{{4.6}{11}{Evaluation Metrics}{subsection.4.6}{}}
-\@writefile{toc}{\contentsline {paragraph}{A scale-free measure.}{11}{section*.17}\protected@file@percent }
-\newlabel{eq:relmae}{{4}{11}{A scale-free measure}{equation.4.4}{}}
-\@writefile{toc}{\contentsline {paragraph}{Reporting.}{11}{section*.18}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {5}Results}{11}{section.5}\protected@file@percent }
-\newlabel{sec:results}{{5}{11}{Results}{section.5}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Forecasting Performance}{11}{subsection.5.1}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces Forecasting performance across the four rolling origins (2009, 2013, 2019, 2025). MAE and RMSE are measured in EUR billions and reported as mean $\pm $ standard deviation across origins. $\operatorname  {relMAE}$ is the mean ratio to the constant-level benchmark at the same origin (Equation~\eqref  {eq:relmae}); values below one indicate improvement over that benchmark. Estimated models are shown with their best covariate specification; naive benchmarks use no covariates.}}{12}{table.caption.19}\protected@file@percent }
-\newlabel{tab:overall_results}{{4}{12}{Forecasting performance across the four rolling origins (2009, 2013, 2019, 2025). MAE and RMSE are measured in EUR billions and reported as mean $\pm $ standard deviation across origins. $\operatorname {relMAE}$ is the mean ratio to the constant-level benchmark at the same origin (Equation~\eqref {eq:relmae}); values below one indicate improvement over that benchmark. Estimated models are shown with their best covariate specification; naive benchmarks use no covariates}{table.caption.19}{}}
-\@writefile{toc}{\contentsline {paragraph}{Answering RQ1.}{12}{section*.20}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces Mean level MAE (EUR billions, vertical axis) per model, each in its best-performing covariate specification, averaged over the four rolling origins (2009, 2013, 2019, 2025). Error bars denote one standard deviation across origins. The reference line marks the one-step drift benchmark; only bars below this line improve on a naive rule.}}{12}{figure.caption.21}\protected@file@percent }
-\newlabel{fig:model_comparison}{{4}{12}{Mean level MAE (EUR billions, vertical axis) per model, each in its best-performing covariate specification, averaged over the four rolling origins (2009, 2013, 2019, 2025). Error bars denote one standard deviation across origins. The reference line marks the one-step drift benchmark; only bars below this line improve on a naive rule}{figure.caption.21}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Accuracy Versus Robustness}{13}{subsection.5.2}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces Trade-off between forecast accuracy (mean level MAE, horizontal axis, EUR billions) and regime robustness (standard deviation of level MAE across the four rolling origins, vertical axis). Points closer to the lower-left corner are simultaneously accurate and stable.}}{13}{figure.caption.22}\protected@file@percent }
-\newlabel{fig:perf_vs_stability}{{5}{13}{Trade-off between forecast accuracy (mean level MAE, horizontal axis, EUR billions) and regime robustness (standard deviation of level MAE across the four rolling origins, vertical axis). Points closer to the lower-left corner are simultaneously accurate and stable}{figure.caption.22}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Effect of Covariate Selection}{13}{subsection.5.3}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {6}{\ignorespaces Mean level MAE (EUR billions, vertical axis) of each model across the nine covariate specifications of Table~\ref {tab:covariate_sets}, averaged over the four rolling origins. The lowest bar per model identifies the specification reported in Table~\ref {tab:overall_results}.}}{14}{figure.caption.23}\protected@file@percent }
-\newlabel{fig:best_set_per_model}{{6}{14}{Mean level MAE (EUR billions, vertical axis) of each model across the nine covariate specifications of Table~\ref {tab:covariate_sets}, averaged over the four rolling origins. The lowest bar per model identifies the specification reported in Table~\ref {tab:overall_results}}{figure.caption.23}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.4}Variation Across Forecast Origins}{14}{subsection.5.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.5}Interpreting the Selection Procedure}{14}{subsection.5.5}\protected@file@percent }
-\newlabel{subsec:selection}{{5.5}{14}{Interpreting the Selection Procedure}{subsection.5.5}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {7}{\ignorespaces Level MAE (EUR billions) per covariate specification, resolved by forecast origin (2009, 2013, 2019, 2025). Each panel corresponds to one origin; lower values indicate better forecasts. Note the differing vertical scales across panels.}}{15}{figure.caption.24}\protected@file@percent }
-\newlabel{fig:mae_covariate_time}{{7}{15}{Level MAE (EUR billions) per covariate specification, resolved by forecast origin (2009, 2013, 2019, 2025). Each panel corresponds to one origin; lower values indicate better forecasts. Note the differing vertical scales across panels}{figure.caption.24}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {8}{\ignorespaces Rolling-origin evaluation: level MAE (EUR billions, vertical axis) per model plotted against the end of the training window (horizontal axis). Naive benchmarks are drawn as dashed reference lines, estimated models as solid lines with markers.}}{15}{figure.caption.25}\protected@file@percent }
-\newlabel{fig:rolling_timeline}{{8}{15}{Rolling-origin evaluation: level MAE (EUR billions, vertical axis) per model plotted against the end of the training window (horizontal axis). Naive benchmarks are drawn as dashed reference lines, estimated models as solid lines with markers}{figure.caption.25}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.6}Evaluation Metrics}{10}{subsection.4.6}\protected@file@percent }
+\newlabel{subsec:evaluation_metrics}{{4.6}{10}{Evaluation Metrics}{subsection.4.6}{}}
+\@writefile{toc}{\contentsline {paragraph}{A scale-free measure.}{10}{section*.17}\protected@file@percent }
+\newlabel{eq:relmae}{{4}{10}{A scale-free measure}{equation.4.4}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {5}Results}{10}{section.5}\protected@file@percent }
+\newlabel{sec:results}{{5}{10}{Results}{section.5}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Forecasting Performance}{10}{subsection.5.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Answering RQ1.}{10}{section*.19}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces Forecasting performance across the four rolling origins (2009, 2013, 2019, 2025). With MAE and RMSE measured in EUR billions and reported as mean $\pm $ standard deviation across origins.}}{11}{table.caption.18}\protected@file@percent }
+\newlabel{tab:overall_results}{{4}{11}{Forecasting performance across the four rolling origins (2009, 2013, 2019, 2025). With MAE and RMSE measured in EUR billions and reported as mean $\pm $ standard deviation across origins}{table.caption.18}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces Mean MAE of reconstructed deposit-volume levels across the four forecast origins (2009, 2013, 2019 and 2025). Each model is shown using its lowest-MAE covariate specification, and error bars indicate one standard deviation across origins. The horizontal line marks the one-step drift benchmark.}}{11}{figure.caption.20}\protected@file@percent }
+\newlabel{fig:model_comparison}{{4}{11}{Mean MAE of reconstructed deposit-volume levels across the four forecast origins (2009, 2013, 2019 and 2025). Each model is shown using its lowest-MAE covariate specification, and error bars indicate one standard deviation across origins. The horizontal line marks the one-step drift benchmark}{figure.caption.20}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Accuracy Versus Robustness}{11}{subsection.5.2}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces Forecast accuracy and stability across all model--covariate combinations. The horizontal axis shows mean level MAE across the four forecast origins, while the vertical axis shows its standard deviation. Lower values indicate greater accuracy and stability. The dashed lines mark the mean MAE and standard deviation of the one-step drift benchmark.}}{12}{figure.caption.21}\protected@file@percent }
+\newlabel{fig:perf_vs_stability}{{5}{12}{Forecast accuracy and stability across all model--covariate combinations. The horizontal axis shows mean level MAE across the four forecast origins, while the vertical axis shows its standard deviation. Lower values indicate greater accuracy and stability. The dashed lines mark the mean MAE and standard deviation of the one-step drift benchmark}{figure.caption.21}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Effect of Covariate Selection}{12}{subsection.5.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.4}Variation Across Forecast Origins}{13}{subsection.5.4}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {6}{\ignorespaces Level MAE across covariate specifications, separated by model and forecast origin. Each panel represents one model, while the colours identify the four forecast origins. Lower values indicate better forecast performance.}}{13}{figure.caption.22}\protected@file@percent }
+\newlabel{fig:mae_covariate_time}{{6}{13}{Level MAE across covariate specifications, separated by model and forecast origin. Each panel represents one model, while the colours identify the four forecast origins. Lower values indicate better forecast performance}{figure.caption.22}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.5}Interpreting the Selection Procedure}{13}{subsection.5.5}\protected@file@percent }
+\newlabel{subsec:selection}{{5.5}{13}{Interpreting the Selection Procedure}{subsection.5.5}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {7}{\ignorespaces Rolling-origin evaluation: level MAE (EUR billions, vertical axis) per model plotted against the end of the training window (horizontal axis). Naive benchmarks are drawn as dashed reference lines, estimated models as solid lines with markers.}}{14}{figure.caption.23}\protected@file@percent }
+\newlabel{fig:rolling_timeline}{{7}{14}{Rolling-origin evaluation: level MAE (EUR billions, vertical axis) per model plotted against the end of the training window (horizontal axis). Naive benchmarks are drawn as dashed reference lines, estimated models as solid lines with markers}{figure.caption.23}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {8}{\ignorespaces Distribution of level MAE (EUR billions, vertical axis) across the four rolling origins per model, shown as boxplots ordered by median. Box height reflects the interquartile range, whiskers the full observed range across origins.}}{14}{figure.caption.24}\protected@file@percent }
+\newlabel{fig:rolling_summary}{{8}{14}{Distribution of level MAE (EUR billions, vertical axis) across the four rolling origins per model, shown as boxplots ordered by median. Box height reflects the interquartile range, whiskers the full observed range across origins}{figure.caption.24}{}}
 \citation{makridakis2020m4}
 \citation{makridakis2022m5}
 \citation{zeng2023transformers}
-\@writefile{lof}{\contentsline {figure}{\numberline {9}{\ignorespaces Distribution of level MAE (EUR billions, vertical axis) across the four rolling origins per model, shown as boxplots ordered by median. Box height reflects the interquartile range, whiskers the full observed range across origins.}}{16}{figure.caption.26}\protected@file@percent }
-\newlabel{fig:rolling_summary}{{9}{16}{Distribution of level MAE (EUR billions, vertical axis) across the four rolling origins per model, shown as boxplots ordered by median. Box height reflects the interquartile range, whiskers the full observed range across origins}{figure.caption.26}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {6}Discussion}{16}{section.6}\protected@file@percent }
-\newlabel{sec:discussion}{{6}{16}{Discussion}{section.6}{}}
 \citation{lim2021}
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.1}Ridge Regression: Accuracy Through Shrinkage}{17}{subsection.6.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.2}Temporal Fusion Transformer: Architectural Capacity Without Input Variation}{17}{subsection.6.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6}Discussion}{15}{section.6}\protected@file@percent }
+\newlabel{sec:discussion}{{6}{15}{Discussion}{section.6}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.1}Ridge Regression: Accuracy Through Shrinkage}{15}{subsection.6.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.2}Temporal Fusion Transformer: Architectural Capacity Without Input Variation}{15}{subsection.6.2}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {9}{\ignorespaces Ridge forecasts with the full covariate set at the four rolling origins. Each upper panel shows the last six months of training data, the realised out-of-sample path, the ensemble mean forecast reconstructed from predicted first differences, and the 90\% and 98\% ensemble bands; the vertical axis is the deposit volume in EUR billions. Each lower panel plots the daily residual (actual minus forecast) in EUR billions across the 100-day horizon. Note the differing vertical scales across origins.}}{16}{figure.caption.25}\protected@file@percent }
+\newlabel{fig:forecast_linreg}{{9}{16}{Ridge forecasts with the full covariate set at the four rolling origins. Each upper panel shows the last six months of training data, the realised out-of-sample path, the ensemble mean forecast reconstructed from predicted first differences, and the 90\% and 98\% ensemble bands; the vertical axis is the deposit volume in EUR billions. Each lower panel plots the daily residual (actual minus forecast) in EUR billions across the 100-day horizon. Note the differing vertical scales across origins}{figure.caption.25}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {10}{\ignorespaces Temporal Fusion Transformer forecasts using the macroeconomic covariate set (geopolitical risk, inflation) at the four rolling origins. Panels are constructed as in Figure~\ref {fig:forecast_linreg}. Future covariate values are held constant at the last observed level to avoid look-ahead bias, while calendar features enter as genuine known future inputs.}}{17}{figure.caption.26}\protected@file@percent }
+\newlabel{fig:forecast_tft}{{10}{17}{Temporal Fusion Transformer forecasts using the macroeconomic covariate set (geopolitical risk, inflation) at the four rolling origins. Panels are constructed as in Figure~\ref {fig:forecast_linreg}. Future covariate values are held constant at the last observed level to avoid look-ahead bias, while calendar features enter as genuine known future inputs}{figure.caption.26}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {6.3}Feedforward Networks and Gradient-Boosted Trees}{18}{subsection.6.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.4}Economic Interpretation: Why 2009 and 2022 Are Hard}{18}{subsection.6.4}\protected@file@percent }
-\newlabel{subsec:economic}{{6.4}{18}{Economic Interpretation: Why 2009 and 2022 Are Hard}{subsection.6.4}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {10}{\ignorespaces Forecasts of the two nonlinear models at the 1 June 2025 origin, the window most affected by the post-2022 deposit reallocation. Panels are constructed as in Figure~\ref {fig:forecast_linreg}. Note that the XGBoost panel shows the \emph  {deposit-rate-only} specification rather than the best-performing ``excluding inflation'' specification of Table~\ref {tab:overall_results}; it is displayed here because it isolates the extrapolation behaviour discussed in the text most clearly.}}{19}{figure.caption.27}\protected@file@percent }
-\newlabel{fig:forecast_nonlinear}{{10}{19}{Forecasts of the two nonlinear models at the 1 June 2025 origin, the window most affected by the post-2022 deposit reallocation. Panels are constructed as in Figure~\ref {fig:forecast_linreg}. Note that the XGBoost panel shows the \emph {deposit-rate-only} specification rather than the best-performing ``excluding inflation'' specification of Table~\ref {tab:overall_results}; it is displayed here because it isolates the extrapolation behaviour discussed in the text most clearly}{figure.caption.27}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {11}{\ignorespaces Forecasts of the two nonlinear models at the 1 June 2025 origin, the window most affected by the post-2022 deposit reallocation. Panels are constructed as in Figure~\ref {fig:forecast_linreg}. Note that the XGBoost panel shows the \emph  {deposit-rate-only} specification rather than the best-performing ``excluding inflation'' specification of Table~\ref {tab:overall_results}; it is displayed here because it isolates the extrapolation behaviour discussed in the text most clearly.}}{18}{figure.caption.27}\protected@file@percent }
+\newlabel{fig:forecast_nonlinear}{{11}{18}{Forecasts of the two nonlinear models at the 1 June 2025 origin, the window most affected by the post-2022 deposit reallocation. Panels are constructed as in Figure~\ref {fig:forecast_linreg}. Note that the XGBoost panel shows the \emph {deposit-rate-only} specification rather than the best-performing ``excluding inflation'' specification of Table~\ref {tab:overall_results}; it is displayed here because it isolates the extrapolation behaviour discussed in the text most clearly}{figure.caption.27}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.4}Economic Interpretation: Why 2009 and 2022 Are Hard}{19}{subsection.6.4}\protected@file@percent }
+\newlabel{subsec:economic}{{6.4}{19}{Economic Interpretation: Why 2009 and 2022 Are Hard}{subsection.6.4}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {6.5}Understanding the Out-of-Sample $R^2$ Metric}{19}{subsection.6.5}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {6.6}Limitations}{19}{subsection.6.6}\protected@file@percent }
 \newlabel{subsec:limitations}{{6.6}{19}{Limitations}{subsection.6.6}{}}
 \@writefile{toc}{\contentsline {paragraph}{The target is an interpolated series.}{19}{section*.28}\protected@file@percent }
 \citation{bcbs2016irrbb,eba2022irrbb,frauendorfer2003}
+\citation{winkler2025}
 \@writefile{toc}{\contentsline {paragraph}{Few origins, and covariate sets selected in-sample.}{20}{section*.29}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{The tuning budget is equal but not equally generous.}{20}{section*.30}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{The lookback window is fixed and not varied.}{20}{section*.31}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Training and inference see different covariate structures.}{20}{section*.32}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Aggregate data cannot answer institution-level questions.}{20}{section*.33}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Uncertainty bands are not calibrated.}{20}{section*.34}\protected@file@percent }
-\citation{winkler2025}
 \@writefile{toc}{\contentsline {paragraph}{Reconstructed \mbox  {\texteuro STR}{} history.}{21}{section*.35}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {6.7}Managerial Implications}{21}{subsection.6.7}\protected@file@percent }
 \@writefile{toc}{\contentsline {section}{\numberline {7}Conclusion and Outlook}{21}{section.7}\protected@file@percent }
 \newlabel{sec:conclusion}{{7}{21}{Conclusion and Outlook}{section.7}{}}
 \bibstyle{apalike}
 \bibdata{references}
-\bibcite{bcbs2016irrbb}{{bcb}{}{{}}{{}}}
-\bibcite{schlueter2015bank}{{sch}{}{{}}{{}}}
-\bibcite{ecb2011monetary}{{3}{a}{{ecb}}{{}}}
-\bibcite{winkler2025}{{win}{}{{}}{{}}}
-\bibcite{marena2022nonmaturing}{{mar}{}{{}}{{}}}
-\bibcite{jarrow1998}{{jar}{}{{}}{{}}}
-\bibcite{hutchison1996}{{hut}{}{{}}{{}}}
-\bibcite{obrien2000}{{obr}{}{{}}{{}}}
-\bibcite{frauendorfer2003}{{fra}{}{{}}{{}}}
-\bibcite{kalkbrener2004}{{kal}{}{{}}{{}}}
-\bibcite{blochlinger2015}{{blo}{}{{}}{{}}}
-\bibcite{nystrom2008}{{nys}{}{{}}{{}}}
-\bibcite{eba2022irrbb}{{eba}{}{{}}{{}}}
-\bibcite{hewamalage2021}{{hew}{}{{}}{{}}}
-\bibcite{makridakis2020m4}{{15}{a}{{mak}}{{}}}
 \@writefile{toc}{\contentsline {paragraph}{Outlook and Future Work.}{22}{section*.36}\protected@file@percent }
-\bibcite{makridakis2022m5}{{16}{b}{{mak}}{{}}}
-\bibcite{zeng2023transformers}{{zen}{}{{}}{{}}}
-\bibcite{bundesbank_data}{{18}{a}{{bun}}{{}}}
-\bibcite{bundesbank2024financing}{{19}{b}{{bun}}{{}}}
-\bibcite{ecb_estr}{{20}{b}{{ecb}}{{}}}
-\bibcite{gpr_index}{{gpr}{}{{}}{{}}}
-\bibcite{destatis_inflation}{{des}{}{{}}{{}}}
-\bibcite{yfinance}{{yfi}{}{{}}{{}}}
-\bibcite{yahoo_finance_dax}{{yah}{}{{}}{{}}}
-\bibcite{bundesbank_bonds}{{25}{c}{{bun}}{{}}}
-\bibcite{fritsch_carlson}{{fri}{}{{}}{{}}}
-\bibcite{ecb_preestr}{{27}{c}{{ecb}}{{}}}
-\bibcite{box2015}{{box}{}{{}}{{}}}
-\bibcite{lim2021}{{lim}{}{{}}{{}}}
-\bibcite{chen2016}{{che}{}{{}}{{}}}
-\bibcite{hastie2009}{{has}{}{{}}{{}}}
-\bibcite{hyndman2006mase}{{hyn}{}{{}}{{}}}
-\bibcite{dieboldmariano1995}{{die}{}{{}}{{}}}
-\bibcite{harvey1997}{{har}{}{{}}{{}}}
-\@writefile{toc}{\contentsline {section}{\numberline {A}Appendix: Additional Figures and Tables}{23}{appendix.A}\protected@file@percent }
-\newlabel{app:additional}{{A}{23}{Appendix: Additional Figures and Tables}{appendix.A}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {B}Appendix: Code}{23}{appendix.B}\protected@file@percent }
-\newlabel{app:code}{{B}{23}{Appendix: Code}{appendix.B}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces Complete per-origin results for each model in its best covariate specification. Level MAE in EUR billions; $\operatorname  {relMAE}$ in parentheses is the ratio to the constant-level benchmark at the same origin. With only four origins, we report the full matrix rather than aggregates alone.}}{24}{table.caption.38}\protected@file@percent }
-\newlabel{tab:per_origin}{{5}{24}{Complete per-origin results for each model in its best covariate specification. Level MAE in EUR billions; $\operatorname {relMAE}$ in parentheses is the ratio to the constant-level benchmark at the same origin. With only four origins, we report the full matrix rather than aggregates alone}{table.caption.38}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {11}{\ignorespaces All variables after standardisation to zero mean and unit variance over the sample period January 2003 -- September 2025, shown on a common vertical scale so that co-movement between the deposit volume and the covariates is directly visible.}}{24}{figure.caption.39}\protected@file@percent }
-\newlabel{fig:app_overview_normalized}{{11}{24}{All variables after standardisation to zero mean and unit variance over the sample period January 2003 -- September 2025, shown on a common vertical scale so that co-movement between the deposit volume and the covariates is directly visible}{figure.caption.39}{}}
-\providecommand\NAT@force@numbers{}\NAT@force@numbers
-\@writefile{lol}{\contentsline {lstlisting}{\numberline {1}{\ignorespaces Shared model-fitting interface.}}{25}{lstlisting.1}\protected@file@percent }
-\gdef \@abspage@last{25}
+\@writefile{toc}{\contentsline {section}{\numberline {A}Appendix: Additional Figures and Tables}{22}{appendix.A}\protected@file@percent }
+\newlabel{app:additional}{{A}{22}{Appendix: Additional Figures and Tables}{appendix.A}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces Complete per-origin results for each model in its best covariate specification. Level MAE in EUR billions; $\operatorname  {relMAE}$ in parentheses is the ratio to the constant-level benchmark at the same origin. With only four origins, we report the full matrix rather than aggregates alone.}}{22}{table.caption.37}\protected@file@percent }
+\newlabel{tab:per_origin}{{5}{22}{Complete per-origin results for each model in its best covariate specification. Level MAE in EUR billions; $\operatorname {relMAE}$ in parentheses is the ratio to the constant-level benchmark at the same origin. With only four origins, we report the full matrix rather than aggregates alone}{table.caption.37}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {B}Appendix: Code}{22}{appendix.B}\protected@file@percent }
+\newlabel{app:code}{{B}{22}{Appendix: Code}{appendix.B}{}}
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {1}{\ignorespaces Shared model-fitting interface.}}{22}{lstlisting.1}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {12}{\ignorespaces Complete forecasting results across the nine covariate specifications. MAE and RMSE are measured in EUR billions and reported as mean $\pm $ standard deviation across the four rolling forecast origins. Specifications are ordered by mean MAE within each model, and the best specification for each estimated model is shown in bold.}}{23}{figure.caption.38}\protected@file@percent }
+\newlabel{fig:covariate_results_full}{{12}{23}{Complete forecasting results across the nine covariate specifications. MAE and RMSE are measured in EUR billions and reported as mean $\pm $ standard deviation across the four rolling forecast origins. Specifications are ordered by mean MAE within each model, and the best specification for each estimated model is shown in bold}{figure.caption.38}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {13}{\ignorespaces FFN forecasts with the macroeconomic covariate set at all four rolling origins; panel construction as in Figure~\ref {fig:forecast_linreg}.}}{24}{figure.caption.39}\protected@file@percent }
+\newlabel{fig:app_forecast_ffn}{{13}{24}{FFN forecasts with the macroeconomic covariate set at all four rolling origins; panel construction as in Figure~\ref {fig:forecast_linreg}}{figure.caption.39}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {14}{\ignorespaces XGBoost forecasts with the deposit-rate-only specification at all four rolling origins; panel construction as in Figure~\ref {fig:forecast_linreg}. This is not the best-performing XGBoost specification (see Table~\ref {tab:overall_results}) but illustrates the extrapolation behaviour discussed in Section~\ref {sec:discussion} most clearly.}}{25}{figure.caption.40}\protected@file@percent }
+\newlabel{fig:app_forecast_xgboost}{{14}{25}{XGBoost forecasts with the deposit-rate-only specification at all four rolling origins; panel construction as in Figure~\ref {fig:forecast_linreg}. This is not the best-performing XGBoost specification (see Table~\ref {tab:overall_results}) but illustrates the extrapolation behaviour discussed in Section~\ref {sec:discussion} most clearly}{figure.caption.40}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {15}{\ignorespaces All variables after standardisation to zero mean and unit variance over the sample period January 2003 -- September 2025, shown on a common vertical scale so that co-movement between the deposit volume and the covariates is directly visible.}}{25}{figure.caption.41}\protected@file@percent }
+\newlabel{fig:app_overview_normalized}{{15}{25}{All variables after standardisation to zero mean and unit variance over the sample period January 2003 -- September 2025, shown on a common vertical scale so that co-movement between the deposit volume and the covariates is directly visible}{figure.caption.41}{}}
+\gdef \@abspage@last{26}

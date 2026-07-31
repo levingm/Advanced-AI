@@ -118,13 +118,10 @@ non-maturity deposits (NMDs) as liabilities without contractual maturity
 where depositors retain immediate withdrawal rights. Because interest paid on
 NMDs is below market rates and banks adjust deposit rates flexibly, NMDs
 provide stable, low-cost funding. In the German banking sector, household
-overnight deposits account for over 60\% of retail funding
-\citep{schlueter2015bank}, making their predictable management critical for bank
-liquidity management, balance-sheet planning, and regulatory compliance
-\citep{ecb2011monetary}. However, because depositor behavior is driven by
-stochastic cash-flow needs, forecasting volume trajectories remains
-methodologically challenging, and literature lacks consensus on the optimal
-modeling approach \citep{winkler2025, marena2022nonmaturing}.
+overnight deposits account for the largest single component of retail funding
+\citep{bundesbank2024deposits}, making their predictable management critical for bank liquidity management,
+balance-sheet planning, and regulatory compliance \citep{bcbs2016irrbb}. However, because depositor behavior is driven by
+stochastic cash-flow needs \citep{marena2022nonmaturing}, the risk management of NMDs has long been understudied despite to its importance \citep{kalkbrener2004}, with no consensus on the optimal modeling approach.
 
 \indent This study addresses this gap by comparing the forecasting NMD volumes. Because bank-level NMD data are
 protected, our empirical analysis uses publicly observable German household
@@ -173,11 +170,8 @@ concludes and outlines future research approaches.
 
 \paragraph{Modelling non-maturity deposits}
 Most NMD literature uses deposit volumes as a modelling input rather than the forecasting target. \citet{jarrow1998} model deposit balances and rates jointly under an
-arbitrage-free framework, while \citet{hutchison1996} examine volume
-sensitivity under imperfect competition. \citet{obrien2000} demonstrates slow
-balance convergence using partial-adjustment models, motivating strong target
-autocorrelation. Another way is to translates volume dynamics into
-replicating-portfolio techniques for asset--liability management
+arbitrage-free framework. Another way is to translate volume dynamics into
+quantitative frameworks for asset--liability management
 \citep{frauendorfer2003, kalkbrener2004, blochlinger2015, nystrom2008}, an
 approach embedded in supervisory maturity caps \citep{bcbs2016irrbb,
 eba2022irrbb}.
@@ -188,15 +182,16 @@ Ornstein--Uhlenbeck process against an LSTM network, providing interpolation
 procedures we adopt in Section~\ref{subsec:interpolation}.
 \citet{marena2022nonmaturing} also apply ML to NMDs. However, both studies
 evaluate on a single out-of-sample window, which fails to separate
-model superiority from window-specific fit \citep{hewamalage2021}.
+model superiority from window-specific fit \citep{hewamalage2023}.
 
 
 \paragraph{Complexity in Forecasting}
-Other literature on forecasting already showed that simple statistical and hybrid models systematically beat pure ML methods against complexity \citep{makridakis2020m4, makridakis2022m5}.
+Other literature on forecasting already showed that simple statistical and hybrid models systematically beat pure ML methods over more complex models \citep{makridakis2020m4}, this holds even in large-scale retail settings \citep{makridakis2022m5}.
 \citet{zeng2023transformers} demonstrate that single linear layers match or
 exceed complex Transformers on long-horizon benchmarks, arguing self-attention
-disrupts temporal ordering. \citet{hewamalage2021} show neural network gains
-rarely survive rigorous rolling-origin protocols with matched tuning effort.
+disrupts temporal ordering. \citet{hewamalage2023} show that fixed-origin evaluation on a single 
+test window is insufficient, leading to false conclusions, 
+recommending rolling-origin protocols as more robust.
 
 \paragraph{Positioning.}
 Table~\ref{tab:related_work} positions this paper. We are not aware of any study
@@ -211,18 +206,14 @@ tuning budgets, and scale-free metrics.
     \label{tab:related_work}
     \begin{tabularx}{\textwidth}{l X c c}
         \toprule
-        Reference & Modeling approach & Multiple origins & Matched tuning \\
+        Reference & Modelling approach & Multiple origins & Matched tuning \\
         \midrule
-        \citet{jarrow1998}        & Arbitrage-free valuation & \ding{55} & --- \\
-        \citet{obrien2000}        & Partial-adjustment model & \ding{55} & --- \\
-        \citet{frauendorfer2003}  & Replicating portfolios & \ding{55} & --- \\
-        \citet{marena2022nonmaturing} & Machine learning for NMDs & \ding{55} & \ding{55} \\
-        \citet{winkler2025}       & L\'evy OU process vs.\ LSTM & \ding{55} & \ding{55} \\
+        \citet{marena2022nonmaturing} & Lévy--OU stochastic model & \ding{55} & \ding{55} \\
+        \citet{winkler2025}       & Lévy OU process vs.\ LSTM & \ding{55} & \ding{55} \\
         \citet{makridakis2020m4}  & Large-scale M4 competition & \ding{51} & \ding{51} \\
         \citet{zeng2023transformers} & Linear layer vs.\ Transformers & \ding{51} & \ding{51} \\
         \midrule
-        \textbf{This paper} & Naive, Ridge, XGBoost, FFN, TFT
-        & \ding{51} & \ding{51} \\
+        \textbf{This paper} & Naïve, Ridge, XGBoost, FFN, TFT & \ding{51} & \ding{51} \\
         \bottomrule
     \end{tabularx}
 \end{table}

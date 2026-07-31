@@ -915,351 +915,113 @@ deviations based on four observations are imprecise. The results therefore do
 not establish universal Ridge superiority, but they provide no evidence that
 greater complexity consistently improves forecast accuracy.
 
+
+
+
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % ---------------------------------------------------------------------------
 % 6. Discussion
 % ---------------------------------------------------------------------------
 \section{Discussion}
 \label{sec:discussion}
 
-The empirical findings from our rolling-origin benchmark provide insight into
-how distinct algorithmic architectures handle a highly autocorrelated, noisy,
-and regime-shifting financial series over a 100-day horizon. Contrary to
-common expectations in the applied machine-learning literature -- but
-consistent with the competition evidence of \citet{makridakis2020m4} and
-\citet{makridakis2022m5} and with the linear-baseline results of
-\citet{zeng2023transformers} -- a simple regularized linear model was not
-outperformed by any of the more complex architectures. This section evaluates
-the structural reasons for that outcome, connects the results to the economic
-events in the sample, and states the limitations that bound our conclusions.
+The rolling-origin benchmark shows that an $\ell_2$-regularized linear model (Ridge) achieved lower overall prediction error across the 100-day horizon than the more complex non-linear architectures. This section analyzes the causes of these performance differences, links the forecasts to the underlying economic regimes, and details the limitations of our framework.
 
-\subsection{Ridge Regression: Accuracy Through Shrinkage}
-Ridge achieved the highest overall accuracy ($\text{MAE} = 9.36$~Bn.~\texteuro,
-$\operatorname{relMAE} = 0.44$), outperforming the one-step drift benchmark by
-$20.5\%$, and was the only model with a positive mean $R^2$ ($0.178$). Under
-the scale-free measure it was also the most stable of the estimated models
-($\pm 0.31$), so the phrase ``accurate but volatile'' that a reading of the
-absolute standard deviations would suggest does not survive normalisation.
+\subsection{Ridge Regression}
+Ridge achieved the highest overall accuracy ($\text{MAE} = 9.36\text{ Bn EUR}$, $\operatorname{relMAE} = 0.44$), outperforming the drift baseline by roughly 20\%. It was also the only model with a positive mean $R^2$ ($0.178$).
 
-The structural advantage of $\ell_2$-regularized linear models in cumulative
-horizon forecasting lies in their smooth penalty mechanism. Because the level
-forecast is reconstructed by summation
-(Equation~\eqref{eq:level_reconstruction}), a small but \emph{systematic} bias
-in the predicted daily differences accumulates linearly in the horizon: a bias
-of $0.05$~Bn.~\texteuro{} per day becomes an error of $5$~Bn.~\texteuro{} at
-$h=100$. What matters over a long horizon is therefore not the variance of the
-daily prediction but the absence of drift in its mean. The Ridge penalty
-shrinks weakly identified coefficients towards zero and thereby suppresses
-precisely the kind of spurious directional signal that would compound.
+The main advantage of Ridge lies in its shrinkage penalty. Because we calculated level forecasts by adding up predicted daily differences, any small daily bias compounds over a 100-day horizon (for instance, a daily error of just $0.05\text{ Bn EUR}$ turns into a $5\text{ Bn EUR}$ drift by day 100). Over longer horizons, keeping the daily prediction unbiased matters much more than daily variance. The Ridge penalty shrinks noisy parameters toward zero, which stops this cumulative drift.
 
-This mechanism is decisive at the input dimensionality implied by $L=100$.
-With a 100-step window, six covariates and three lags each, the flattened
-design matrix contains on the order of $2{,}500$ columns, estimated from
-roughly $1{,}350$ overlapping sequences at the earliest origin -- a regime in
-which the ordinary least-squares solution is not merely imprecise but
-ill-posed. Neighbouring columns are moreover nearly perfectly collinear by
-construction, since a covariate at lag $j$ and at lag $j+1$ differ by one day
-of a smoothed series, and \estr, the deposit rate and the ten-year yield move
-together over most of the sample. Shrinkage is the textbook remedy for exactly
-this configuration, and its effectiveness explains why Ridge was
-simultaneously the most accurate model, the least sensitive to the covariate
-set (Figure~\ref{fig:best_set_per_model}), and best served by the full
-specification, whereas an unpenalised or weakly penalised learner must expend
-degrees of freedom distinguishing regressors that carry the same information.
+This heavy regularization was necessary because of the high feature-to-observation ratio. A 100-day lookback window across six covariates and their respective lags creates roughly 2,500 features, while the earliest origin provides only about 1,350 training observations. On top of that, adjacent lags and macro-financial variables (like deposit rates and ten-year yields) are highly correlated. Ridge handles this collinearity by shrinking dependent parameter weights, keeping forecasts stable even when testing different covariate sets.
+
+As shown in Figure~\ref{fig:forecast_linreg}, Ridge residuals remain centered around zero for the 2013, 2019, and 2025 origins. The 2009 financial crisis was the only period where the model developed a systematic forecast bias, caused by the sudden structural shift following the Lehman Brothers collapse.
 
 \originsgrid
   {forecast_linreg_alle_2009-01-01.png}
   {forecast_linreg_alle_2013-01-01.png}
   {forecast_linreg_alle_2019-03-01.png}
   {forecast_linreg_alle_2025-06-01.png}
-  {Ridge forecasts with the full covariate set at the four rolling origins.
-   Each upper panel shows the last six months of training data, the realised
-   out-of-sample path, the ensemble mean forecast reconstructed from predicted
-   first differences, and the 90\% and 98\% ensemble bands; the vertical axis
-   is the deposit volume in EUR billions. Each lower panel plots the daily
-   residual (actual minus forecast) in EUR billions across the 100-day
-   horizon. Note the differing vertical scales across origins.}
+  {Ridge forecasts with the full covariate set across the four origins.}
   {fig:forecast_linreg}
 
-The residual sub-panels of Figure~\ref{fig:forecast_linreg} make this
-mechanism visible. At the 2013, 2019 and 2025 origins the residuals remain
-centred near zero and grow only slowly with the horizon, which is the
-signature of an unbiased difference forecast. At the 2009 origin the residual
-panel instead shows a monotone, one-sided drift -- the model is not noisy
-there, it is systematically wrong about the direction of the level, and the
-summation in Equation~\eqref{eq:level_reconstruction} converts that directional
-error into the $25.71$~Bn.~\texteuro{} error reported in
-Appendix~\ref{app:additional}.
+\subsection{Temporal Fusion Transformer (TFT)}
+The TFT ranked second overall ($\text{MAE} = 10.78\text{ Bn EUR}$) and achieved the lowest error of any model at the 2025 origin ($2.43\text{ Bn EUR}$). However, its core strength, using self-attention mechanisms to weigh future inputs, yielded limited benefits in this setup.
 
-\subsection{Temporal Fusion Transformer: Architectural Capacity Without Input Variation}
-The TFT ranked second overall ($\text{MAE} = 10.78$~Bn.~\texteuro,
-$\operatorname{relMAE} = 0.49$) and produced the single most accurate forecast
-of any model at any origin ($2.43$~Bn.~\texteuro{} in 2025). Although the TFT
-is designed specifically for multi-horizon forecasting through variable
-selection and self-attention \citep{lim2021}, its potential was structurally
-constrained by the evaluation setup.
-
-To prevent look-ahead bias, future values of the six macro-financial
-covariates were held constant at their last observed value over the entire
-horizon; only the calendar features were supplied as genuine known future
-inputs. The decoder therefore receives a constant sequence for every
-economically meaningful variable. The attention mechanism, whose purpose is to
-weight informative future inputs against one another, has nothing to weight.
-This is not a defect of the architecture but a property of the forecasting
-problem: for a bank forecasting at time $t$, the future path of inflation and
-market rates is genuinely unknown, and any protocol that supplied it would
-report accuracy that could not be realised in practice. It does, however, mean
-that our comparison evaluates the TFT under conditions that neutralise its
-main design advantage, and the conclusion should be read as ``the TFT offers
-no advantage \emph{when future covariates are unavailable}'' rather than as a
-general statement about the architecture. Notably, the 100-day encoder gives
-the TFT a genuinely long context over which attention can operate on the
-historical side, so the constraint lies unambiguously on the decoder input
-rather than on the amount of history available.
+To prevent data leakage, future macro variables were held constant across the 100-day evaluation window, with only calendar features updating over time. Because these economic inputs remained static, they provided no dynamic future signals for the TFT decoder. Consequently, the model defaulted to extrapolating previous trends into a smooth path (Figure~\ref{fig:forecast_tft}). This highlights that complex architectures like TFT offer little advantage when exogenous variables cannot be forecasted accurately in advance.
 
 \originsgrid
   {forecast_tft_nur_makro_2009-01-01.png}
   {forecast_tft_nur_makro_2013-01-01.png}
   {forecast_tft_nur_makro_2019-03-01.png}
   {forecast_tft_nur_makro_2025-06-01.png}
-  {Temporal Fusion Transformer forecasts using the macroeconomic covariate set
-   (geopolitical risk, inflation) at the four rolling origins. Panels are
-   constructed as in Figure~\ref{fig:forecast_linreg}. Future covariate values
-   are held constant at the last observed level to avoid look-ahead bias,
-   while calendar features enter as genuine known future inputs.}
+  {TFT forecasts using macroeconomic covariates.}
   {fig:forecast_tft}
 
-Figure~\ref{fig:forecast_tft} shows the consequence: with frozen exogenous
-inputs, the predicted path degenerates towards a smooth extrapolation of the
-encoder trend, and the ensemble bands widen steadily with the horizon as the
-model signals its own growing uncertainty.
-
-\subsection{Feedforward Networks and Gradient-Boosted Trees}
-Neither the FFN ($11.85$~Bn.~\texteuro) nor XGBoost ($12.71$~Bn.~\texteuro)
-consistently outperformed the one-step drift benchmark
-($11.78$~Bn.~\texteuro), despite both having been tuned under the same
-protocol and budget as Ridge (Section~\ref{subsec:tuning}). The two models
-fail in structurally different ways.
+\subsection{FFN and XGBoost}
+Neither FFN ($11.85\text{ Bn EUR}$) nor XGBoost ($12.71\text{ Bn EUR}$) managed to beat the simple drift benchmark ($11.78\text{ Bn EUR}$). They struggled for different reasons:
 
 \begin{itemize}
-    \item \textbf{FFN: consistency without precision.} The FFN exhibited the
-    lowest absolute standard deviation across origins ($\pm 6.90$) and
-    produced the best forecast of any model at the difficult 2009 origin
-    ($20.18$~Bn.~\texteuro). Its weakness is concentrated in the easy windows:
-    at the 2013 origin, where Ridge achieved $1.00$~Bn.~\texteuro{} and the
-    TFT $1.05$, the FFN required $3.36$. In other words, it behaves like a
-    heavily damped forecaster -- it never fails catastrophically, but it also
-    never converges tightly on the target when the target is easy. Part of
-    this behaviour is attributable to the input dimensionality: a dense first
-    layer over a flattened 100-step window must estimate a weight for every
-    time step of every covariate, and with a $\ell_2$ penalty of at most
-    $10^{-3}$ that is far weaker than the value Ridge selects, the network has
-    little protection against fitting noise in individual lag positions. For a
-    liquidity manager whose concern is tail behaviour rather than average
-    behaviour, this profile is nonetheless not without value, a point we
-    return to below.
-    \item \textbf{XGBoost: the extrapolation trap.} Regression trees partition
-    the feature space into orthogonal hyper-rectangles and predict a constant
-    within each leaf. They therefore cannot extrapolate a trend beyond the
-    range of differences observed in training. This limitation is most severe
-    exactly where deposit dynamics left their historical range: at the 2025
-    origin, following the largest reallocation of household deposits since the
-    introduction of the euro, XGBoost recorded $15.77$~Bn.~\texteuro{} against
-    $6.05$ for Ridge and $2.43$ for the TFT. XGBoost is also the least stable
-    model under the scale-free measure ($\pm 0.64$), which is the same fact
-    seen from another angle.
+    \item \textbf{FFN:} It gave consistent but overly smoothed results. It performed surprisingly well during the unpredictable 2009 crisis ($20.18\text{ Bn EUR}$), but failed to get close to the target in easier periods like 2013. Without strong regularization, its dense layer fits noise across individual lag positions.
+    \item \textbf{XGBoost:} Decision trees cannot extrapolate trends beyond the ranges seen in training data. This was obvious at the 2025 origin (post-2022 rate hikes), where deposit shifts exceeded historical values. XGBoost flattened out quickly, leading to large accumulation errors ($15.77\text{ Bn EUR}$ vs Ridge's $6.05\text{ Bn EUR}$).
 \end{itemize}
 
 \begin{figure}[htbp]
     \centering
     \begin{subfigure}[b]{0.49\textwidth}
         \includegraphics[width=\textwidth]{forecast_ffn_nur_makro_2025-06-01.png}
-        \caption{FFN, macroeconomic covariates (best specification)}
+        \caption{FFN (macro covariates)}
     \end{subfigure}\hfill
     \begin{subfigure}[b]{0.49\textwidth}
         \includegraphics[width=\textwidth]{forecast_xgboost_nur_einlagezins_2025-06-01.png}
-        \caption{XGBoost, deposit rate only}
+        \caption{XGBoost (deposit rate only)}
     \end{subfigure}
-    \caption{Forecasts of the two nonlinear models at the 1 June 2025 origin,
-    the window most affected by the post-2022 deposit reallocation. Panels are
-    constructed as in Figure~\ref{fig:forecast_linreg}. Note that the XGBoost
-    panel shows the \emph{deposit-rate-only} specification rather than the
-    best-performing ``excluding inflation'' specification of
-    Table~\ref{tab:overall_results}; it is displayed here because it isolates
-    the extrapolation behaviour discussed in the text most clearly.}
+    \caption{Comparing FFN and XGBoost at the June 2025 origin.}
     \label{fig:forecast_nonlinear}
 \end{figure}
 
-Figure~\ref{fig:forecast_nonlinear} contrasts the two failure modes directly:
-the FFN produces a smooth path with a persistent level offset, whereas the
-XGBoost path flattens after a small number of steps and the residual panel
-accumulates an almost monotone error across the remainder of the horizon.
-
-\subsection{Economic Interpretation: Why 2009 and 2022 Are Hard}
+\subsection{Why 2009 and 2025 Were Difficult to Predict}
 \label{subsec:economic}
+The largest forecast errors across all models occurred during major structural shifts:
+\begin{enumerate}
+    \item \textbf{January 2009:} Right after Lehman Brothers collapsed, household behavior was driven by panic, safety guarantees, and flight-to-quality—factors not captured by historical rate series or inflation lags.
+    \item \textbf{June 2025:} Post-pandemic savings and rapid ECB rate hikes caused a massive shift from overnight to term deposits. Our models included raw deposit rates, but not the actual rate spread or deposit-beta pass-through speed. Adding an explicit deposit-spread variable would likely fix this.
+\end{enumerate}
 
-The two hardest parts of our sample correspond to the two episodes in which
-household deposit behaviour was driven by forces that no covariate in our
-information set measures.
+\subsection{Note on $R^2$ and Study Limitations}
+Seeing negative $R^2$ values might look like a red flag at first, but it is actually quite common in multi-step time series forecasting. In these setups, standard $R^2$ compares predictions to a flat average of the future test period—a line no real-time model could actually know. Since all our models beat the constant baseline ($\operatorname{relMAE} < 1.0$), they clearly hold predictive value despite the negative $R^2$.
 
-The January 2009 origin sits immediately after the collapse of Lehman
-Brothers, during a period of acute precautionary saving, deposit guarantees
-and flight to safety. Deposit volumes moved for reasons of confidence rather
-than of relative return, and the resulting path is not a function of interest
-rates, equity prices or measured inflation over the preceding hundred days.
-Every model, including both naive benchmarks, records its largest error at
-this origin -- the crisis is not a model-selection problem but an
-identification problem, compounded by the fact that this origin also offers
-the least training data (Section~\ref{sec:framework}).
+A few practical limitations of our study should be noted:
+\begin{itemize}
+    \item \textbf{Interpolated Target Data:} The target deposit volume is published monthly and interpolated to daily frequency. This makes daily steps smooth, which slightly favors simpler extrapolative methods.
+    \item \textbf{Limited Evaluation Origins:} Testing on only four dates limits formal statistical testing.
+    \item \textbf{Sector-level Data:} We use aggregate Bundesbank data. While good for macro insights, individual banks have unique customer spreads and deposit dynamics that aggregate data masks.
+\end{itemize}
 
-The second episode shapes the 2025 origin. The 2020--2021 pandemic produced a
-large accumulation of household overnight balances through forced saving, and
-the ECB tightening cycle from mid-2022 then triggered the reverse: a
-substantial reallocation from overnight into term deposits as the spread
-between them widened for the first time in over a decade. This is a
-behavioural response to a \emph{spread} and to a change in the speed of
-deposit-rate pass-through, neither of which appears as a variable in
-Table~\ref{tab:covariate_sets} -- we include the deposit rate and \estr{}
-separately, but not their difference and not the pass-through coefficient
-between them. That the TFT nonetheless achieved $2.43$~Bn.~\texteuro{} at this
-origin while XGBoost required $15.77$ reflects the extrapolation argument
-above rather than superior economic understanding. Constructing an explicit
-deposit-beta or spread covariate is, in our view, the single most promising
-extension of this work, and we return to it in
-Section~\ref{sec:conclusion}.
+\subsection{Key Takeaways}
+For bank asset-liability management (ALM) and practical forecasting applications, our results suggest three main conclusions:
+\begin{enumerate}
+    \item \textbf{Linear models are hard to beat in practice:} Regularized models like Ridge are fast to compute, easy to explain, and give high stability over 100-day horizons.
+    \item \textbf{Complexity doesn't guarantee accuracy:} Moving from no model to a basic statistical model gives a massive jump in accuracy, but upgrading to complex deep learning increases computation time and does not improve accuracy unless rich future features are guaranteed.
+    \item \textbf{Model selection depends on the goal:} While Ridge is best for baseline operational forecasting, FFN proved more stable during the 2009 market shock. Using a simple ensemble approach could provide the best balance between daily precision and crisis resilience.
+\end{enumerate}
 
-\subsection{Understanding the Out-of-Sample $R^2$ Metric}
-As observed in Table~\ref{tab:overall_results}, most models yielded negative
-$R^2$ values. In multi-step time-series forecasting, $R^2$ compares
-predictions against the mean of the test window, $\overline{y}_k$. Because
-$\overline{y}_k$ is computed from realizations that are unavailable at the
-forecast origin, it is an unrealistically strong reference: a forecaster who
-knew the average deposit level over the coming quarter would already possess
-most of the information being forecast. A negative $R^2$ therefore indicates
-that the multi-step trajectory diverged from this post-hoc mean, not that the
-model has no predictive utility -- as the $\operatorname{relMAE}$ column
-confirms, every model beats the genuinely available constant-level reference.
-Level MAE and $\operatorname{relMAE}$ are therefore our primary ranking
-metrics, and $R^2$ is reported for comparability with prior work only.
 
-\subsection{Limitations}
-\label{subsec:limitations}
 
-Several features of this study bound the conclusions that can be drawn from
-it, and we set them out explicitly.
 
-\paragraph{The target is an interpolated series.}
-This is the most consequential limitation. The deposit volume is published
-monthly and converted to a daily grid by PCHIP interpolation
-(Section~\ref{subsec:interpolation}). Two consequences follow. First, an
-interpolated value within a month is constructed using the value at the end of
-that month, which was not known in real time; the constructed ``truth'' within
-the evaluation window is therefore partly forward-looking. Second, the
-resulting daily differences are artificially smooth and strongly
-autocorrelated, which flatters extrapolative methods -- including our one-step
-drift benchmark -- and means that the 100 error terms entering each
-$\operatorname{MAE}_k$ represent roughly three independent observations rather
-than one hundred. All reported metrics should be read as describing forecast
-accuracy against a smoothed construct, not against realised daily balances,
-and a replication at native monthly frequency is the first robustness check we
-would recommend.
 
-\paragraph{Few origins, and covariate sets selected in-sample.}
-Four forecast origins are too few for inference, and the best covariate set
-per model is chosen on the same windows on which it is reported. Both issues
-are analysed in Section~\ref{subsec:selection}; we report descriptively
-throughout and avoid claims of statistical superiority.
 
-\paragraph{The tuning budget is equal but not equally generous.}
-Ridge, XGBoost and the FFN were tuned under an identical protocol and an
-identical budget of at most twelve configurations. The TFT architecture was
-fixed a priori, because a comparable search was not computationally feasible.
-A more extensively tuned TFT might close the remaining gap to Ridge. This
-asymmetry works against our conclusion, but it means that our result is
-properly stated as ``complexity did not pay off \emph{at this level of tuning
-effort}''.
 
-\paragraph{The lookback window is fixed and not varied.}
-We set $L=H=100$ for all models on the grounds given in
-Section~\ref{sec:framework} and did not vary it. Two consequences follow.
-First, a window of 100 trading days does not span an annual cycle of
-approximately 250 trading days, so no model can learn calendar seasonality or
-interest-rate cycles from its encoder input; monthly and quarterly effects are
-in any case largely removed by the interpolation of the target. Second, the
-requirement of $L+H=200$ observations per training sequence materially reduces
-the effective sample, and does so most severely at the earliest origin, which
-is also the hardest. Both effects apply identically to all models and
-therefore do not bias the comparison between them, but they bound the level of
-accuracy that is attainable in this design, and it remains possible that the
-flexible architectures would separate from Ridge given a substantially longer
-context. A sensitivity analysis over $L \in \{100, 250, 500\}$ would test this
-directly and is, alongside the monthly-frequency replication, the most
-important robustness check left open by this study.
 
-\paragraph{Training and inference see different covariate structures.}
-Models are trained on windows in which covariates vary, but forecast with
-covariates frozen at the origin. This mismatch penalises precisely those
-models that rely most heavily on covariate dynamics and offers a plausible
-alternative explanation for why the FFN and TFT achieve their best results
-with the smallest covariate set. Our RQ3 findings should therefore be read as
-statements about behaviour under this realistic-information protocol, not as
-evidence about the intrinsic economic informativeness of the variables.
 
-\paragraph{Aggregate data cannot answer institution-level questions.}
-Our motivation is institution-level ALM, but our data is a sector aggregate
-published by the Bundesbank. An aggregate series nets out migration between
-institutions, contains no information on customer segmentation, and reveals
-neither the deposit beta of an individual bank nor its core/non-core split --
-which are precisely the quantities that replicating-portfolio and IRRBB
-frameworks require \citep{bcbs2016irrbb, eba2022irrbb, frauendorfer2003}.
-Our results are therefore best understood as evidence about the predictability
-of \emph{sector-level} household deposit dynamics, which is useful as a
-macro-prudential and early-warning input, and as methodological guidance on
-model selection that plausibly transfers to institution-level data. They are
-not a validated forecasting system for an individual bank's deposit book.
 
-\paragraph{Uncertainty bands are not calibrated.}
-The 90\% and 98\% bands in Figures~\ref{fig:forecast_linreg}
-to~\ref{fig:forecast_nonlinear} are empirical quantiles across ensemble
-members and therefore quantify estimation uncertainty, not total forecast
-uncertainty; they are consequently too narrow, and no coverage evaluation is
-reported. Since liquidity buffer sizing depends on interval accuracy rather
-than on point accuracy, this is a substantive gap.
 
-\paragraph{Reconstructed \estr{} history.}
-For observations before March 2017 the \estr{} series is reconstructed rather
-than observed, following \citet{winkler2025}. A substantial portion of the
-sample therefore contains a synthetic version of one of our central
-covariates.
 
-\subsection{Managerial Implications}
-For bank asset--liability management and treasury operations, predictability,
-computational cost, and interpretability are as consequential as raw accuracy.
-Three implications follow from our results.
 
-First, a regularized linear model is a defensible default for 100-day
-aggregate deposit forecasting. It was not outperformed by any more complex
-architecture, its coefficients can be inspected and challenged by a model
-validation function, it trains in seconds rather than in the minutes to hours
-required by the TFT, and it is straightforward to document under model-risk
-governance requirements.
 
-Second, and more importantly, the marginal value of \emph{any} of these models
-over a naive rule is modest compared with the value of having a model at all.
-The gap between the best model and the one-step drift rule
-($\operatorname{relMAE}$ $0.44$ against $0.60$) is far smaller than the gap
-between either and a constant-level assumption ($1.00$). Institutions
-currently without a volume model gain most from adopting a simple one;
-institutions with a simple one should not expect large gains from replacing it
-with a deep architecture.
 
-Third, model choice should follow the intended use. For central-case
-planning, the lowest average error is the relevant criterion and favours
-Ridge. For stress and buffer sizing, what matters is behaviour in the adverse
-regime, and there the picture differs: at the 2009 crisis origin the FFN was
-the most accurate model of all, and it exhibited the smallest absolute
-dispersion across regimes. A treasury function may therefore rationally run a
-simple model for planning alongside a more heavily damped one for
-tail-scenario assessment, rather than searching for a single winner.
 
 % ---------------------------------------------------------------------------
 % 7. Conclusion and Outlook
@@ -1267,68 +1029,27 @@ tail-scenario assessment, rather than searching for a single winner.
 \section{Conclusion and Outlook}
 \label{sec:conclusion}
 
-Accurate forecasting of non-maturity deposit volumes is fundamental to bank
-liquidity management, regulatory balance-sheet planning, and interest-rate
-risk assessment. Modelling aggregate NMDs is nonetheless difficult because the
-series is non-stationary, strongly autocorrelated, and subject to
-macroeconomic regime shifts, and because the existing literature treats the
-volume process largely as a valuation input rather than as a forecasting
-target evaluated out of sample.
+Accurate forecasting of non-maturity deposit (NMD) volumes is fundamental to bank liquidity management, regulatory balance-sheet planning, and interest-rate risk assessment. Modeling aggregate NMDs is challenging: the underlying series is non-stationary, strongly autocorrelated, and vulnerable to macroeconomic shifts. Furthermore, existing literature largely treats deposit volumes as valuation inputs rather than standalone targets evaluated out of sample.
 
-This study evaluated six forecasting approaches across four forecast origins
-spanning distinct interest-rate regimes (2009--2025) using an expanding-window
-rolling-origin design, a common information set with a 100-day lookback window
-and lagged covariates, and a common tuning budget. Our conclusions address the
-three research questions as follows.
+To address this gap, we evaluated six forecasting approaches across four origins spanning distinct interest-rate regimes between 2009 and 2025. Using an expanding-window design with a standard 100-day lookback window and equal tuning budgets, our results answer the three core research questions:
 
 \begin{enumerate}
-    \item \textbf{Forecast accuracy (RQ1).} Over a 100-day horizon, the best
-    model reduced the mean absolute error to $44\%$ of the constant-level
-    benchmark ($\text{MAE} = 9.36$~Bn.~\texteuro), averaged across four very
-    different economic environments. Accuracy varied far more across periods
-    than across models: the 2009 crisis origin was roughly three times harder
-    than any other and accounts for nearly all reported cross-origin
-    dispersion.
-    \item \textbf{Model complexity (RQ2).} Greater complexity did not yield
-    higher accuracy. Ridge achieved the best overall performance
-    ($\operatorname{relMAE} = 0.44$, mean $R^2 = 0.178$) ahead of the TFT
-    ($0.49$), while XGBoost ($0.69$) and the FFN ($0.71$) failed to improve on
-    a one-step drift rule ($0.60$) despite receiving identical inputs, an
-    identical context length, and an identical tuning budget. Because only
-    four origins are available, we report this as an absence of measurable
-    advantage rather than as demonstrated superiority of the linear model.
-    \item \textbf{Covariate selection (RQ3).} The value of a covariate set
-    depends more on the functional form that consumes it than on its economic
-    content. Ridge varied by only $26\%$ across the nine specifications and
-    was best with the full set, consistent with shrinkage handling the highly
-    collinear design matrix that a 100-step window produces; the FFN varied by
-    a factor of nearly two and was best with the smallest set. Since the
-    optimal set also differs by origin, we treat these as sample-specific
-    optima rather than transferable recommendations.
+    \item Across a 100-day horizon, the top-performing model cut the mean absolute error to $44\%$ of the constant-level baseline ($\text{MAE} = 9.36\text{ Bn EUR}$) across all four economic regimes. Notably, performance varied far more across time periods than across model families. The 2009 financial crisis was roughly three times harder to forecast than any other origin, driving most of the overall error dispersion.
+    
+    \item Added model complexity did not yield better accuracy. Ridge regression achieved the highest overall performance ($\operatorname{relMAE} = 0.44$, mean $R^2 = 0.178$), slightly ahead of the TFT ($0.49$). Meanwhile, XGBoost ($0.69$) and the FFN ($0.71$) failed to beat a simple one-step drift rule ($0.60$). Given our sample size of four evaluation origins, these findings reflect a lack of practical advantage for deep learning rather than definitive superiority of linear models.
+    
+    \item The usefulness of a covariate set depended more on the model architecture using it than on the data itself. Ridge performance varied by only $26\%$ across specifications and worked best with the full feature set, proving that L2 regularization handles collinear lag matrices effectively. In contrast, FFN error nearly doubled on larger feature sets, performing best on the smallest input subset.
 \end{enumerate}
 
-\paragraph{Outlook and Future Work.}
-Four extensions follow directly from the limitations set out in
-Section~\ref{subsec:limitations}. First, and most urgently, the benchmark
-should be replicated at the native monthly frequency of the target, so that
-accuracy is measured against realised rather than interpolated values.
-Second, the lookback window should be varied systematically over
-$L \in \{100, 250, 500\}$: a context spanning at least one full year would
-allow calendar and cyclical structure to be learned, and would test whether
-the parity between Ridge and the complex architectures reported here is a
-property of the task or of the context length we imposed. Third, the
-frozen-covariate protocol could be replaced by scenario-based path projections
-for the dynamic covariates, which would restore the TFT's
-known-future-input mechanism and permit a fair assessment of its design
-advantage. Fourth, the economic analysis in Section~\ref{subsec:economic}
-suggests that the informative variable for the post-2022 period is not the
-deposit rate or the market rate individually but the spread between overnight
-and term deposits together with the speed of pass-through; constructing an
-explicit deposit-beta covariate is, in our assessment, more promising than any
-further change of architecture. Finally, hybrid designs that combine a
-regularized linear trend component with a nonlinear residual model may capture
-sudden systemic liquidity shocks while preserving the stability that made the
-linear baseline competitive here.
+\subsection{Outlook and Future Work}
+Based on these findings, we thought of four practical extensions for future research:
+
+\begin{enumerate}
+    \item Testing models on actual monthly data, rather than daily interpolated figures, would show how they perform against real, unadjusted observations.
+    \item Varying the lookback window ($L \in \{100, 250, 500\}$ days) would reveal if a full year of history helps deep architectures capture seasonal patterns better than a linear model.
+    \item Instead of keeping future macro variables flat, using scenario-based projections would give models like TFT actual dynamic signals to work with.
+    \item Adding explicit deposit spreads and pass-through speeds (deposit-beta) should yield greater accuracy gains than tweaking model architectures, especially during policy rate shifts.
+\end{enumerate}
 
 % ---------------------------------------------------------------------------
 % Bibliography

@@ -1,0 +1,170 @@
+% ---------------------------------------------------------------------------
+% 6. Discussion
+% ---------------------------------------------------------------------------
+\section{Discussion}
+\label{sec:discussion}
+
+The rolling-origin benchmark shows that an $\ell_2$-regularized linear model (Ridge) achieved lower overall prediction error across the 100-day horizon than the more complex non-linear architectures. This section analyzes the causes of these performance differences, links the forecasts to the underlying economic regimes, and details the limitations of our framework.
+
+\subsection{Ridge Regression}
+Ridge achieved the highest overall accuracy ($\text{MAE} = 9.36\text{ Bn EUR}$, $\operatorname{relMAE} = 0.44$), outperforming the drift baseline by roughly 20\%. It was also the only model with a positive mean $R^2$ ($0.178$).
+
+The main advantage of Ridge lies in its shrinkage penalty. Because we calculated level forecasts by adding up predicted daily differences, any small daily bias compounds over a 100-day horizon (for instance, a daily error of just $0.05\text{ Bn EUR}$ turns into a $5\text{ Bn EUR}$ drift by day 100). Over longer horizons, keeping the daily prediction unbiased matters much more than daily variance. The Ridge penalty shrinks noisy parameters toward zero, which stops this cumulative drift.
+
+This heavy regularization was necessary because of the high feature-to-observation ratio. A 100-day lookback window across six covariates and their respective lags creates roughly 2,500 features, while the earliest origin provides only about 1,350 training observations. On top of that, adjacent lags and macro-financial variables (like deposit rates and ten-year yields) are highly correlated. Ridge handles this collinearity by shrinking dependent parameter weights, keeping forecasts stable even when testing different covariate sets.
+
+As shown in Figure~\ref{fig:forecast_linreg}, Ridge residuals remain centered around zero for the 2013, 2019, and 2025 origins. The 2009 financial crisis was the only period where the model developed a systematic forecast bias, caused by the sudden structural shift following the Lehman Brothers collapse.
+
+\originsgrid
+  {forecast_linreg_alle_2009-01-01.png}
+  {forecast_linreg_alle_2013-01-01.png}
+  {forecast_linreg_alle_2019-03-01.png}
+  {forecast_linreg_alle_2025-06-01.png}
+  {Ridge forecasts with the full covariate set across the four origins.}
+  {fig:forecast_linreg}
+
+\subsection{Temporal Fusion Transformer (TFT)}
+The TFT ranked second overall ($\text{MAE} = 10.78\text{ Bn EUR}$) and achieved the lowest error of any model at the 2025 origin ($2.43\text{ Bn EUR}$). However, its core strength, using self-attention mechanisms to weigh future inputs, yielded limited benefits in this setup.
+
+To prevent data leakage, future macro variables were held constant across the 100-day evaluation window, with only calendar features updating over time. Because these economic inputs remained static, they provided no dynamic future signals for the TFT decoder. Consequently, the model defaulted to extrapolating previous trends into a smooth path (Figure~\ref{fig:forecast_tft}). This highlights that complex architectures like TFT offer little advantage when exogenous variables cannot be forecasted accurately in advance.
+
+\originsgrid
+  {forecast_tft_nur_makro_2009-01-01.png}
+  {forecast_tft_nur_makro_2013-01-01.png}
+  {forecast_tft_nur_makro_2019-03-01.png}
+  {forecast_tft_nur_makro_2025-06-01.png}
+  {TFT forecasts using macroeconomic covariates.}
+  {fig:forecast_tft}
+
+\subsection{FFN and XGBoost}
+Neither FFN ($11.85\text{ Bn EUR}$) nor XGBoost ($12.71\text{ Bn EUR}$) managed to beat the simple drift benchmark ($11.78\text{ Bn EUR}$). They struggled for different reasons:
+
+\begin{itemize}
+    \item \textbf{FFN:} It gave consistent but overly smoothed results. It performed surprisingly well during the unpredictable 2009 crisis ($20.18\text{ Bn EUR}$), but failed to get close to the target in easier periods like 2013. Without strong regularization, its dense layer fits noise across individual lag positions.
+    \item \textbf{XGBoost:} Decision trees cannot extrapolate trends beyond the ranges seen in training data. This was obvious at the 2025 origin (post-2022 rate hikes), where deposit shifts exceeded historical values. XGBoost flattened out quickly, leading to large accumulation errors ($15.77\text{ Bn EUR}$ vs Ridge's $6.05\text{ Bn EUR}$).
+\end{itemize}
+
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}[b]{0.49\textwidth}
+        \includegraphics[width=\textwidth]{forecast_ffn_nur_makro_2025-06-01.png}
+        \caption{FFN (macro covariates)}
+    \end{subfigure}\hfill
+    \begin{subfigure}[b]{0.49\textwidth}
+        \includegraphics[width=\textwidth]{forecast_xgboost_nur_einlagezins_2025-06-01.png}
+        \caption{XGBoost (deposit rate only)}
+    \end{subfigure}
+    \caption{Comparing FFN and XGBoost at the June 2025 origin.}
+    \label{fig:forecast_nonlinear}
+\end{figure}
+
+\subsection{Why 2009 and 2025 Were Difficult to Predict}
+\label{subsec:economic}
+The largest forecast errors across all models occurred during major structural shifts:
+\begin{enumerate}
+    \item \textbf{January 2009:} Right after Lehman Brothers collapsed, household behavior was driven by panic, safety guarantees, and flight-to-quality—factors not captured by historical rate series or inflation lags.
+    \item \textbf{June 2025:} Post-pandemic savings and rapid ECB rate hikes caused a massive shift from overnight to term deposits. Our models included raw deposit rates, but not the actual rate spread or deposit-beta pass-through speed. Adding an explicit deposit-spread variable would likely fix this.
+\end{enumerate}
+
+\subsection{Note on $R^2$ and Study Limitations}
+Seeing negative $R^2$ values might look like a red flag at first, but it is actually quite common in multi-step time series forecasting. In these setups, standard $R^2$ compares predictions to a flat average of the future test period—a line no real-time model could actually know. Since all our models beat the constant baseline ($\operatorname{relMAE} < 1.0$), they clearly hold predictive value despite the negative $R^2$.
+
+A few practical limitations of our study should be noted:
+\begin{itemize}
+    \item \textbf{Interpolated Target Data:} The target deposit volume is published monthly and interpolated to daily frequency. This makes daily steps smooth, which slightly favors simpler extrapolative methods.
+    \item \textbf{Limited Evaluation Origins:} Testing on only four dates limits formal statistical testing.
+    \item \textbf{Sector-level Data:} We use aggregate Bundesbank data. While good for macro insights, individual banks have unique customer spreads and deposit dynamics that aggregate data masks.
+\end{itemize}
+
+\subsection{Key Takeaways}
+For bank asset-liability management (ALM) and practical forecasting applications, our results suggest three main conclusions:
+\begin{enumerate}
+    \item \textbf{Linear models are hard to beat in practice:} Regularized models like Ridge are fast to compute, easy to explain, and give high stability over 100-day horizons.
+    \item \textbf{Complexity doesn't guarantee accuracy:} Moving from no model to a basic statistical model gives a massive jump in accuracy, but upgrading to complex deep learning increases computation time and does not improve accuracy unless rich future features are guaranteed.
+    \item \textbf{Model selection depends on the goal:} While Ridge is best for baseline operational forecasting, FFN proved more stable during the 2009 market shock. Using a simple ensemble approach could provide the best balance between daily precision and crisis resilience.
+\end{enumerate}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+% ---------------------------------------------------------------------------
+% 7. Conclusion and Outlook
+% ---------------------------------------------------------------------------
+\section{Conclusion and Outlook}
+\label{sec:conclusion}
+
+Accurate forecasting of non-maturity deposit (NMD) volumes is fundamental to bank liquidity management, regulatory balance-sheet planning, and interest-rate risk assessment. Modeling aggregate NMDs is challenging: the underlying series is non-stationary, strongly autocorrelated, and vulnerable to macroeconomic shifts. Furthermore, existing literature largely treats deposit volumes as valuation inputs rather than standalone targets evaluated out of sample.
+
+To address this gap, we evaluated six forecasting approaches across four origins spanning distinct interest-rate regimes between 2009 and 2025. Using an expanding-window design with a standard 100-day lookback window and equal tuning budgets, our results answer the three core research questions:
+
+\begin{enumerate}
+    \item Across a 100-day horizon, the top-performing model cut the mean absolute error to $44\%$ of the constant-level baseline ($\text{MAE} = 9.36\text{ Bn EUR}$) across all four economic regimes. Notably, performance varied far more across time periods than across model families. The 2009 financial crisis was roughly three times harder to forecast than any other origin, driving most of the overall error dispersion.
+    
+    \item Added model complexity did not yield better accuracy. Ridge regression achieved the highest overall performance ($\operatorname{relMAE} = 0.44$, mean $R^2 = 0.178$), slightly ahead of the TFT ($0.49$). Meanwhile, XGBoost ($0.69$) and the FFN ($0.71$) failed to beat a simple one-step drift rule ($0.60$). Given our sample size of four evaluation origins, these findings reflect a lack of practical advantage for deep learning rather than definitive superiority of linear models.
+    
+    \item The usefulness of a covariate set depended more on the model architecture using it than on the data itself. Ridge performance varied by only $26\%$ across specifications and worked best with the full feature set, proving that L2 regularization handles collinear lag matrices effectively. In contrast, FFN error nearly doubled on larger feature sets, performing best on the smallest input subset.
+\end{enumerate}
+
+\subsection{Outlook and Future Work}
+Based on these findings, we thought of four practical extensions for future research:
+
+\begin{enumerate}
+    \item Testing models on actual monthly data, rather than daily interpolated figures, would show how they perform against real, unadjusted observations.
+    \item Varying the lookback window ($L \in \{100, 250, 500\}$ days) would reveal if a full year of history helps deep architectures capture seasonal patterns better than a linear model.
+    \item Instead of keeping future macro variables flat, using scenario-based projections would give models like TFT actual dynamic signals to work with.
+    \item Adding explicit deposit spreads and pass-through speeds (deposit-beta) should yield greater accuracy gains than tweaking model architectures, especially during policy rate shifts.
+\end{enumerate}
+
+
+
+
+
+
+⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠿⢛⣛⣩⣭⣭⣭⣭⣙⣩⣭⣭⣭⣭⣙⣛⠻⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠟⣋⣵⣶⣿⣿⣿⣿⣿⠿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡷⣦⣙⠻⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⢋⣴⣿⣿⡟⡿⢻⣿⣿⡟⣿⠸⣿⡙⣿⣿⣇⢻⣿⣿⣿⣿⣿⣷⣍⡻⣷⣬⡻⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⢣⣶⢿⡿⢋⠍⢰⠃⣾⣿⣿⢡⣿⡆⢿⣧⠹⣿⣿⣆⢻⣿⣿⣿⣿⣿⣿⣿⣦⡹⣷⣌⠻⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠏⣴⡿⡡⠋⡴⢣⠢⠃⣼⣿⣿⢃⣾⣿⡇⣌⠻⣷⡈⠻⢿⣦⡙⢿⣿⣿⣿⣿⣿⣿⣷⣌⢿⣷⡜⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⢋⣼⡟⠁⠄⣨⠞⡁⢀⣾⣿⡿⢃⣾⣿⢏⣴⣿⣷⣮⣙⡂⠄⠨⢙⡂⠙⠻⢿⣿⣿⣿⣿⣿⣧⡙⢿⣆⢻⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡟⣸⣿⠃⣴⣶⣿⠖⣣⣾⣿⠟⣡⡾⠟⣫⣼⣿⣿⣿⣿⣿⣷⣶⣤⣼⣷⣶⣦⣬⣙⡻⢿⣿⣿⣿⣷⣜⠿⣎⢻⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⢠⣿⣯⣼⡿⢟⣡⣾⠿⢛⣡⣤⣴⣶⣿⣿⣿⣿⣿⣿⣿⣿⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⣬⡙⣿⣿⣿⣷⣶⣆⠹⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣿⣿⣿⣿⣿⠃⣾⣿⣿⣦⣤⣤⢀⣶⣾⢛⡭⠐⠒⠒⠬⡛⢿⣿⣿⢸⣿⣿⡌⣿⣿⡿⢋⠅⠒⠐⠒⢬⡝⢿⣷⡘⣿⣿⣿⣿⣿⣷⡜⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣿⣿⣿⣿⣿⢸⣿⣿⣿⣿⣿⢃⣾⣿⡡⡏⠀⠐⠀⠂⠀⣈⣼⣿⡇⢾⣿⣿⡆⢿⣿⣧⣀⠀⠰⠠⠅⠀⢹⡎⣿⣷⡘⣿⣿⣿⣿⣿⡿⠷⠬⢙⢻⢿⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣿⣿⣿⣿⣿⢸⣿⣿⣿⣿⡏⣼⣿⣿⣿⡿⠶⠶⠶⢞⣫⣼⣿⠟⣡⣭⣶⣦⣽⣌⠻⣿⣦⣙⡲⠶⠶⠶⢿⣿⣿⣿⣧⠸⣿⣿⣿⣿⣿⣦⣤⣭⡭⢀⣿⣿⣿⣿⣿
+⣿⣿⡟⢻⣿⣿⣿⣿⡏⣸⣿⣿⣿⡿⢠⣿⣿⣿⣿⣿⣿⣿⣿⣿⠟⢋⣴⡿⠓⠹⣿⡏⠙⠿⢷⣎⢻⡻⣿⣿⣿⣿⣿⣿⣿⣿⣿⡆⢻⣿⣿⣿⣿⣿⡟⢉⣒⡁⣼⣿⣿⣿⡿
+⣿⣿⣷⠠⣉⡛⠿⢛⣠⣿⣿⣿⣿⡇⣿⣿⣿⣿⣿⣿⣿⡿⢋⣵⣿⣦⣛⣠⣴⣾⣿⣷⣶⣤⣛⣛⣼⣿⣦⣙⢿⣿⣿⣿⣿⣿⣿⣷⢸⣿⣿⣿⣿⣿⣿⣿⡿⢡⣿⣿⣿⡿⠞
+⣿⠋⢛⠷⠍⠛⢻⣿⣿⣿⣿⣿⣿⢰⣿⣿⣿⣿⣿⡿⣫⣶⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⣍⢻⣿⣿⣿⣿⣿⢸⣿⣿⣿⣿⣿⣿⡿⣡⣾⣿⣿⣿⣿⡌
+⣿⠀⠦⡻⢿⣿⣿⣿⣿⣿⣿⣿⣟⢸⣿⣿⣿⣿⢏⣴⣿⣿⣿⠿⠟⠛⣛⡛⠉⠉⣉⠉⠉⢛⣛⠛⡛⠿⠿⣿⣿⣿⣷⡹⣿⣿⣿⣿⢸⣿⣿⣿⣿⠟⣫⠴⠟⣻⣿⣿⣿⡿⠁
+⣿⣆⠳⣦⣤⣽⣿⣿⣿⣿⣿⣿⣗⢸⣿⣿⣿⠇⣾⣿⡟⠋⠀⣬⢡⣶⣎⣰⣿⣿⣀⣾⣿⣷⣱⣶⡎⣥⡔⡂⢍⢿⣿⣷⢹⣿⣿⡟⢸⣿⣿⠿⣷⡶⠖⣫⣴⣿⡿⠏⠁⠀⠒
+⣿⣿⠣⠜⠻⢿⣿⣿⣿⣿⣿⣿⣿⠸⣿⣿⡏⢸⣿⡏⢠⢸⢇⣿⢻⣿⣿⣿⣿⣿⡛⣿⣿⣿⢿⣿⠿⣿⣇⣿⢈⠂⢹⣿⡌⣿⣿⡇⣿⡿⠛⠦⠄⣀⣿⡿⠉⠁⠀⠀⠀⠀⠀
+⣿⣿⣷⣬⡐⠻⢿⢿⣿⣿⣿⣿⣿⡆⢻⣿⣿⢸⣿⠀⢆⢆⠣⠍⠀⠀⠀⠈⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⢒⣋⠟⡄⠈⣿⡇⣿⡿⢰⡿⢁⣶⣤⣍⠻⠁⠀⠀⠀⠀⣀⣠⣀⣀
+⣿⣿⣿⣿⣷⣀⠨⢼⣿⣿⣿⣿⣿⣧⠸⣿⣿⢸⣿⠀⠘⠊⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠉⠐⠁⠀⣿⢣⣿⠇⡼⢃⣼⣿⣿⣿⣦⡐⢶⣶⣴⣶⣿⣿⣿⣿
+⣿⣿⣿⣿⣿⣿⣷⣶⣤⣭⣭⣄⠙⢿⣆⢻⣿⡌⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣯⣼⡿⢀⣴⣿⣿⣿⣿⡏⢿⣷⣄⡙⢾⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠟⢠⡆⢲⣬⡈⣿⣿⣿⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⣿⣿⡇⣾⣿⣿⣿⣿⣿⣿⢸⣿⣿⣿⡄⢿⣿⣿⣿⣿
+⣿⣿⣿⣿⣿⣿⣿⣿⠟⣠⣾⣿⣷⠸⣿⡇⢻⣿⣿⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣸⣿⣿⢠⣿⣿⣿⣿⣿⣿⡏⣼⣿⣿⣿⡇⠸⣿⣿⣿⣿
+⣿⣿⣿⣿⣿⣿⡿⠛⠰⣿⣿⣿⣿⣆⢹⣿⠸⣿⣿⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⡟⣸⣿⣿⣿⣿⣿⡟⣰⣿⣿⣿⡿⢁⣷⣤⡹⣿⣿
+⣿⣿⣿⣿⡟⢉⣴⣾⣆⠹⣿⣿⣿⣿⣆⠻⡆⣿⣿⣿⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣿⣿⠇⣿⣿⣿⣿⡿⢋⣴⣿⣿⣿⠟⣠⣾⣿⣿⣷⡌⢿
+⣿⣿⣿⠋⣴⣿⣿⣿⣿⣷⡈⠻⣿⣿⣿⣿⣧⢸⣿⣿⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⣿⣿⢰⣿⣿⣿⣿⣷⣿⣿⣿⡿⢃⣴⣿⣿⣿⣿⣿⣿⡌
+⣿⣿⢃⣾⣿⣿⣿⣿⣿⣿⣿⣦⡈⠻⣿⣿⣿⡈⣿⣿⣧⢠⢤⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠴⠆⣾⣿⡏⣸⣿⣿⣿⣿⣿⣿⡿⢋⣴⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⣿⠇⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣶⣌⠻⢿⡇⢿⣿⣿⠰⢿⡂⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣿⠇⣿⣿⡇⣿⣿⣿⣿⣿⡿⢋⣴⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⡿⢸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⣶⣦⢸⣿⣿⡄⢿⣟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣛⠻⢸⣿⣿⢁⣿⣿⣿⠟⣁⣴⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⡇⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡀⣿⣿⣇⠙⣫⣤⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠸⠿⡇⣸⣿⡟⢸⠿⢋⣥⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⠇⣿⣿⣿⣿⣿⣆⠸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡇⢻⣿⣿⡄⠿⣯⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡻⣿⢀⣿⣿⡏⣠⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⠀⣿⣿⣿⣿⣿⣿⡀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⢸⣿⣿⣇⢰⣿⢗⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢴⣧⠙⢸⣿⣿⠃⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⠰⣿⣿⣿⣿⣿⣿⣧⠸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡈⣿⣿⣿⣆⢣⣿⢃⡀⠀⠀⠀⠀⠀⠀⣀⢰⣧⠻⢡⣿⣿⣿⢰⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⠘⣿⣿⣿⣿⣿⣿⣿⡆⢻⣿⣿⣿⣿⣿⣿⣿⣿⣿⡇⢿⣿⣯⠻⣦⠉⢿⡇⣿⡷⣶⢲⣿⡞⣿⠺⠟⣠⢿⣿⣿⡇⣸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⠈⣿⣿⣿⣿⣿⣿⣿⣿⡄⢻⣿⣿⣿⣿⣿⣿⣿⣿⣿⠸⣿⣿⣷⡙⢷⣦⣔⣈⠉⠛⠩⠛⢁⣉⣴⡾⢋⣼⣿⣟⢀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⡄⣿⣿⣿⣿⣿⣿⣿⣿⣿⡄⢿⣿⣿⣿⣿⣿⣿⣿⣿⡆⢻⣿⣿⣿⣷⣭⣛⠻⠿⠿⠿⠿⠿⢛⣫⣴⣿⣿⣿⠇⣼⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⡇⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡄⠹⣿⣿⣿⣿⣿⣿⣿⣿⡌⠿⣿⣿⣿⣿⣿⡿⣿⣿⣿⣿⢿⢿⣿⣿⣿⡿⠏⣼⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿

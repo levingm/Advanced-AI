@@ -47,7 +47,7 @@
 % ---------------------------------------------------------------------------
 \title{\textbf{A Rolling-Origin Benchmark for Forecasting\\
 German Household Overnight Deposit Volumes}}
-\author[1]{David Escamilla \small Matr.-Nr.: XXXXXXX}
+\author[1]{David Escamilla \small Matr.-Nr.: 13169401}
 \author[1]{Levin Gamon \small Matr.-Nr.: 13147864}
 \author[1]{Gregor Hoffmann \small Matr.-Nr.: XXXXXXX}
 \author[1]{Mat\'e Szabo \small Matr.-Nr.: XXXXXXX}
@@ -102,7 +102,7 @@ stochastic cash-flow needs, forecasting volume trajectories remains
 methodologically challenging, and literature lacks consensus on the optimal
 modeling approach \citep{winkler2025, marena2022nonmaturing}.
 
-\indent This study addresses this gap by comparing the forecasting of NMD volumes. Because bank-level NMD data are
+\indent This study addresses this gap by comparing the forecasting NMD volumes. Because bank-level NMD data are
 protected, our empirical analysis uses publicly observable German household
 overnight deposit data as an aggregate as seen in Section~\ref{subsec:limitations}.
 
@@ -191,7 +191,7 @@ tuning budgets, and scale-free metrics.
         \citet{jarrow1998}        & Arbitrage-free valuation & \ding{55} & --- \\
         \citet{obrien2000}        & Partial-adjustment model & \ding{55} & --- \\
         \citet{frauendorfer2003}  & Replicating portfolios & \ding{55} & --- \\
-        \citet{marena2022nonmaturing} & Lévy OU framework & \ding{55} & \ding{55} \\
+        \citet{marena2022nonmaturing} & Machine learning for NMDs & \ding{55} & \ding{55} \\
         \citet{winkler2025}       & L\'evy OU process vs.\ LSTM & \ding{55} & \ding{55} \\
         \citet{makridakis2020m4}  & Large-scale M4 competition & \ding{51} & \ding{51} \\
         \citet{zeng2023transformers} & Linear layer vs.\ Transformers & \ding{51} & \ding{51} \\
@@ -370,7 +370,9 @@ independent monthly releases. The effective sample size is therefore roughly
 thirty times smaller than the nominal number of rows, a point we return to in
 Section~\ref{subsec:limitations}.
 
-%xDXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+% ---------------------------------------------------------------------------
+% 4. Forecasting Models
+% ---------------------------------------------------------------------------
 \section{Forecasting Models}
 \label{sec:models}
 \subsection{Forecasting Framework}
@@ -395,12 +397,12 @@ the complete vector of predicted changes for the following \(H=100\) days:
     \label{eq:forecasting_problem}
 \end{equation}
 
-Setting $L = H$ follows the common convention that the context available to a
-multi-horizon forecaster should be at least as long as the horizon it must
-predict \citep{lim2021, zeng2023transformers}. Also, since the deposit
-series is published monthly and interpolated to a daily grid
-(Section~\ref{subsec:interpolation}), a window of 100 trading days spans
-approximately five genuine monthly observations of the target and provides the models with recent information. 
+%Setting $L = H$ follows the common convention that the context available to a
+%multi-horizon forecaster should be at least as %long as the horizon it must
+%predict \citep{lim2021, zeng2023transformers}. %Also, since the deposit
+%series is published monthly and interpolated to a %daily grid
+%(Section~\ref{subsec:interpolation}), a window of %100 trading days spans
+%approximately five genuine monthly observations %of the target and provides the models with recent %information. 
 \begin{comment}
 Finally, even a 100-day window does not span an annual cycle of approximately
 250 trading days, so no model in this comparison can learn calendar
@@ -436,16 +438,12 @@ known in advance are supplied for the entire forecast horizon.
 \subsection{Model Specifications}
 
 \paragraph{Naive benchmarks.}
-Two naive benchmarks are used. The \emph{one-step drift}
-benchmark extrapolates the single most recently observed daily change at a
-constant rate,
-\begin{equation*}
-    \hat{y}_{t_0+h} = y_{t_0} + h \cdot \Delta y_{t_0}, \qquad h = 1, \dots, 100 ,
-\end{equation*}
-that is, an ARIMA$(0,1,0)$ process whose drift is estimated from one
-observation rather than from the training average. The
-\emph{constant-level} benchmark assumes the level remains unchanged,
-$\hat{y}_{t_0+h} = y_{t_0}$. 
+The one-step drift benchmark extrapolates the latest daily change,
+\[
+\hat{y}_{t_0+h}=y_{t_0}+h\Delta y_{t_0},
+\]
+whereas the constant-level benchmark sets
+\(\hat{y}_{t_0+h}=y_{t_0}\).
 \begin{comment}
 %Both benchmarks are fully interpretable, require
 %no covariates, and serve as the reference against which the estimated models
@@ -645,13 +643,16 @@ constant-level benchmark at the same origin:
     \operatorname{relMAE}_k
     =
     \frac{\operatorname{MAE}_k^{\text{model}}}
-         {\operatorname{MAE}_k^{\text{constant-level}}},
+         {\operatorname{MAE}_k^{\text{constant-level}}}.
     \label{eq:relmae}
 \end{equation}
-where $\operatorname{relMAE}=1$ indicates equal performance and values below
-one indicate an improvement over the benchmark. This dimensionless measure
-allows comparison across forecast periods \citep{hyndman2006mase}.
+Values below one indicate improvement over the benchmark
+\citep{hyndman2006mase}. Metrics are reported as mean and standard deviation
+across the four origins, with origin-level results in
+Appendix~\ref{app:additional}. Because four origins provide little power for
+formal forecast-comparison tests, all comparisons are descriptive.
 
+\begin{comment}
 \paragraph{Reporting.}
 Metrics are calculated separately at each forecast origin and summarised by
 their mean and standard deviation across origins. Because only four origins
@@ -661,9 +662,9 @@ $\operatorname{relMAE}$; RMSE and \(R^2\) provide complementary information,
 and metrics on first differences serve as diagnostics. A Diebold--Mariano test
 \citep{dieboldmariano1995} with the small-sample correction of
 \citet{harvey1997} was implemented but is deliberately not applied to the main
-results: with four origins the test has essentially no power, and reporting a
-non-rejection would invite the false inference that the models are equivalent.
+results: with four origins the test has essentially no power.
 Model comparisons are therefore reported descriptively throughout.
+\end{comment}
 
 % ---------------------------------------------------------------------------
 % 5. Results
@@ -675,8 +676,7 @@ Model comparisons are therefore reported descriptively throughout.
 
 Table ~\ref{tab:overall_results} reports the forecasting performance of each model. The covariate
 specification with the lowest mean level MAE across the four origins, together
-with the scale-free measure of Equation~\eqref{eq:relmae} is specified. The selection of
-the covariate set is discussed critically in Section~\ref{subsec:selection}.
+with the scale-free measure of Equation~\eqref{eq:relmae} is specified.
 
 \begin{table}[htbp]
 \centering
@@ -872,7 +872,7 @@ limited training history cannot be separated completely.
     \label{fig:rolling_summary}
 \end{figure}
 
-Both figures~\ref{fig:covariates_by_origin}--\ref{fig:mae_distribution} show
+Both figures~\ref{fig:mae_covariate_time} and \ref{fig:rolling_timeline} show
 that no model dominates across all forecast origins. The FFN records the
 lowest error in 2009, Ridge performs best in 2013 and remains competitive in
 2019 and 2025, while the TFT records the lowest error at the 2025 origin.
@@ -882,31 +882,13 @@ for every model. The aggregate rankings should then be interpreted as average pe
 \subsection{Interpreting the Selection Procedure}
 \label{subsec:selection}
 
-Reported model rankings must be interpreted cautiously because of three features.
-
-First, for each estimated model, the
-reported value is the lowest mean MAE across nine covariate specifications,
-selected using the same four rolling origins used for evaluation. The naive
-benchmarks enjoy no such freedom, so the reported margin of Ridge over the
-one-step drift benchmark ($9.36$ versus $11.78$, or $20.5\%$) is an upper
-bound on the margin one should expect out of sample.
-
-Second, the four origins were deliberately chosen to represent different
-economic periods rather than sampled randomly. The results therefore cannot
-be assumed to represent all possible forecast periods.
-
-Third, standard deviations based on only four origins are estimated
-imprecisely. A formal Diebold-Mariano comparison of forecast accuracy would also have very
-low power with so few independent origin-level observations.
-
-The results therefore do not establish that Ridge is always superior.
-However, they provide no evidence that greater model complexity consistently
-improves accuracy: TFT only slightly outperforms the drift benchmark,
-while the FFN and XGBoost do not, and none of them outperforms Ridge on
-average.
-
-
-%Xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+Each estimated model is reported using the best
+of nine covariate sets selected on the same four origins used for evaluation,
+which may overstate its advantage over the untuned naive benchmarks. The
+origins were chosen deliberately rather than sampled randomly, and standard
+deviations based on four observations are imprecise. The results therefore do
+not establish universal Ridge superiority, but they provide no evidence that
+greater complexity consistently improves forecast accuracy.
 
 % ---------------------------------------------------------------------------
 % 6. Discussion
